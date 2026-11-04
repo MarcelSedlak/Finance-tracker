@@ -225,6 +225,7 @@ function hash(str){ // cyrb53
 /* "1.234,56" / "8,26 EUR" / "8.26" → cents (integer) or null */
 function parseAmount(s){
   let t = String(s ?? '').replace(/EUR|€|\s| /gi,'');
+  t = t.replace(/[−–]/g, '-');
   if (!t) return null;
   if (t.includes(',')) t = t.replace(/\./g,'').replace(',', '.');
   else if (!/\.\d{1,2}$/.test(t)) t = t.replace(/\./g,'');
