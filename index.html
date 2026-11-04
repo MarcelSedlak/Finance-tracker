@@ -43,6 +43,15 @@ button{cursor:pointer;border:0;background:none;padding:0}
 /* header */
 header{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 8px}
 .hrow{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px}
+.refresh{width:44px;height:44px;border-radius:22px;color:var(--accent);display:flex;align-items:center;justify-content:center}
+.refresh svg{width:24px;height:24px}
+.refresh.spin svg{animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hist{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:15px}
+.hist td,.hist th{padding:9px 0;border-top:1px solid var(--line);text-align:right}
+.hist th{font-size:13px;color:var(--muted);font-weight:600;border-top:0}
+.hist td:first-child,.hist th:first-child{text-align:left}
+.urlin{display:block;width:100%;min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:0 12px;font-size:16px;margin:0 0 10px;-webkit-appearance:none;appearance:none}
 h1{font-size:28px;font-weight:700;margin:0;letter-spacing:-.02em}
 .month{display:flex;align-items:center;justify-content:space-between;margin-top:6px;background:var(--card);border-radius:14px;box-shadow:var(--shadow)}
 .month b{font-size:17px;font-weight:600}
@@ -266,6 +275,7 @@ function nowTs(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMont
 const tsDate = ts => new Date(+ts.slice(0,4), +ts.slice(5,7)-1, +ts.slice(8,10), +ts.slice(11,13)||0, +ts.slice(14,16)||0);
 const curYM = () => nowTs().slice(0,7);
 function shiftYM(ym, n){ const d=new Date(+ym.slice(0,4), +ym.slice(5,7)-1+n, 1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+const ymShort = ym => new Date(+ym.slice(0,4), +ym.slice(5,7)-1, 1).toLocaleDateString('en-GB',{month:'short',year:'numeric'});
 const ymLabel = ym => new Date(+ym.slice(0,4), +ym.slice(5,7)-1, 1).toLocaleDateString('en-GB',{month:'long',year:'numeric'});
 function dayLabel(day){
   const today = nowTs().slice(0,10);
@@ -283,7 +293,7 @@ const sanitize = s => String(s)
   .replace(/,?\s*info\s*\+?\d[\d ]{6,}\s*$/i, '');
 
 /* ================= storage ================= */
-function blank(){ return {v:1, tx:[], review:[], rules:{}, budgets:{}, seen:{}, income:[], cats:[]}; }
+function blank(){ return {v:1, tx:[], review:[], rules:{}, budgets:{}, seen:{}, income:[], cats:[], recurring:[], savingsGoal:0, fileUrl:''}; }
 function load(){
   try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 1) return Object.assign(blank(), d); } catch(e){}
   return blank();
@@ -382,7 +392,7 @@ function refundCat(tx){
   return orig ? catOf(orig) : guessCat(tx.m);
 }
 
-async function importText(text){
+async function importText(text, {quiet=false} = {}){
   const lines = text.split(/\r\n|\n|\r/);
   const occ = {};
   let added = 0, review = 0, skipped = 0, asks = 0, refunds = 0, latest = null;
@@ -420,7 +430,30 @@ async function importText(text){
   if (asks) parts.push(`${asks} need a category`);
   if (review) parts.push(`${review} need review`);
   if (skipped) parts.push(`${skipped} already imported`);
-  toast('Import done: ' + parts.join(' · '));
+  if (!added && !review){ if (!quiet) toast(skipped ? 'Up to date – nothing new' : 'No lines found in the file'); return; }
+  toast((quiet ? 'Refreshed: ' : 'Import done: ') + parts.join(' · '));
+}
+
+/* Fetch spending.txt from the saved link (on start-up and with the ↻ button) */
+let fetching = false;
+async function refreshFile({quiet=false} = {}){
+  if (!S.fileUrl){ if (!quiet){ $('#fileTxt').value=''; $('#fileTxt').click(); } return; }
+  if (fetching) return;
+  fetching = true; render();
+  try {
+    let url = S.fileUrl.trim();
+    url = url.replace(/^https:\/\/www\.dropbox\.com\//i, 'https://dl.dropboxusercontent.com/');
+    url += (url.includes('?') ? '&' : '?') + '_=' + Date.now(); // never use a cached copy
+    const r = await fetch(url, {cache:'no-store'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const text = await r.text();
+    if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('the link returned a web page, not the text file');
+    fetching = false;
+    await importText(text, {quiet});
+  } catch(e){
+    fetching = false; render();
+    toast('Could not refresh the file: ' + (e && e.message || e));
+  }
 }
 
 /* Lines imported before refunds / cash / Revolut were recognized are sitting in review: convert them */
@@ -444,7 +477,18 @@ let month = curYM();
 let filterCat = null;
 let query = '';
 
-function monthTx(ym){ return S.tx.filter(t => t.ts.startsWith(ym)).sort((a,b) => b.ts.localeCompare(a.ts)); }
+const ymDiff = (a, b) => (+b.slice(0,4) - +a.slice(0,4)) * 12 + (+b.slice(5,7) - +a.slice(5,7));
+const lastDay = ym => new Date(+ym.slice(0,4), +ym.slice(5,7), 0).getDate();
+const recurEnd = r => r.months ? shiftYM(r.start, r.months - 1) : null;
+/* Recurring payments aren't stored as transactions: they are added to every month they run in */
+function recurTx(ym){
+  return S.recurring.flatMap(r => {
+    const i = ymDiff(r.start, ym);
+    if (i < 0 || (r.months && i >= r.months)) return [];
+    return [{id:`rec-${r.id}-${ym}`, recur:r.id, ts:`${ym}-${pad(Math.min(r.day||1, lastDay(ym)))}T00:00`, amt:r.amt, m:r.name, place:'', cat:r.cat||'Bills', src:'recurring', note:r.months ? `${i+1} of ${r.months}` : 'monthly'}];
+  });
+}
+function monthTx(ym){ return S.tx.filter(t => t.ts.startsWith(ym)).concat(recurTx(ym)).sort((a,b) => b.ts.localeCompare(a.ts)); }
 function catTotals(list){ const o = {}; cats().forEach(c => o[c]=0); list.forEach(t => { o[catOf(t)] += t.amt; }); return o; }
 const monthIncome = ym => S.income.filter(i => i.ts.startsWith(ym)).sort((a,b) => b.ts.localeCompare(a.ts));
 const askList = () => S.tx.filter(t => t.ask).sort((a,b) => b.ts.localeCompare(a.ts));
@@ -458,9 +502,9 @@ function txRow(t){
   if (t.refund) bits.push('Refund');
   if (t.purpose) bits.push('for ' + t.purpose);
   if (t.ask) bits.push('❓ what was it for?');
-  if (t.src==='manual') bits.push('manual'); else if (t.src==='applepay') bits.push('Apple Pay');
+  if (t.src==='manual') bits.push('manual'); else if (t.src==='applepay') bits.push('Apple Pay'); else if (t.src==='recurring') bits.push('🔁 recurring');
   if (t.note) bits.push(t.note); else if (t.place) bits.push(t.place);
-  return `<li><button class="row" data-edit="${t.id}">${icon(cat)}<span class="mid"><b>${esc(t.m||'—')}</b><small>${esc(bits.join(' · '))}</small></span><span class="amt${t.amt<0?' pos':''}">${t.amt<0?'+'+fmt(-t.amt):fmt(t.amt)}</span></button></li>`;
+  return `<li><button class="row" ${t.recur ? `data-recur="${t.recur}"` : `data-edit="${t.id}"`}>${icon(cat)}<span class="mid"><b>${esc(t.m||'—')}</b><small>${esc(bits.join(' · '))}</small></span><span class="amt${t.amt<0?' pos':''}">${t.amt<0?'+'+fmt(-t.amt):fmt(t.amt)}</span></button></li>`;
 }
 function groupedList(list){
   if (!list.length) return '';
@@ -477,7 +521,8 @@ function renderHeader(){
   const titles = {overview:'Spending', tx:'Transactions', budget:'Budget', review:'Needs review', settings:'Settings'};
   const showMonth = view==='overview' || view==='tx' || view==='budget';
   const latestData = S.tx.concat(S.income).reduce((a,t) => t.ts.slice(0,7) > a ? t.ts.slice(0,7) : a, curYM());
-  $('#hdr').innerHTML = `<div class="hrow"><h1>${titles[view]}</h1></div>` + (showMonth ?
+  const rb = `<button class="refresh${fetching?' spin':''}" data-act="refresh" aria-label="${S.fileUrl?'Refresh from file':'Import spending.txt'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>`;
+  $('#hdr').innerHTML = `<div class="hrow"><h1>${titles[view]}</h1>${rb}</div>` + (showMonth ?
     `<div class="month"><button class="mbtn" data-act="prev" aria-label="Previous month">‹</button><b>${ymLabel(month)}</b><button class="mbtn" data-act="next" aria-label="Next month" ${month>=latestData?'disabled':''}>›</button></div>` : '');
 }
 
@@ -502,7 +547,7 @@ function renderOverview(){
   if (todo) h += `<button class="banner" data-tab="review">⚠️<span>${todo} item${todo===1?'':'s'} need${todo===1?'s':''} your input</span>›</button>`;
   const inc = monthIncome(month).reduce((a,i)=>a+i.amt,0);
   if (inc) h += `<button class="banner ok" data-tab="budget">💰<span>${fmt(inc-total)} left of ${fmt(inc)} income</span>›</button>`;
-  h += `<button class="btn primary" data-act="import">⬇︎ Import spending.txt</button>`;
+  h += S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh from file</button>` : `<button class="btn primary" data-act="import">⬇︎ Import spending.txt</button>`;
 
   // Category breakdown
   h += `<section class="card"><h2>By category</h2>`;
@@ -604,19 +649,22 @@ function renderBudget(){
   const list = monthTx(month);
   const spent = list.reduce((a,t)=>a+t.amt,0);
   const totals = catTotals(list);
-  const left = income - spent;
+  const goal = S.savingsGoal || 0;
+  const left = income - goal - spent;   // what you can still spend after putting the savings aside
+  const saved = income - spent;         // what's actually left over = saved
   const budgetSum = cats().reduce((a,c)=>a+(S.budgets[c]||0),0);
+  const planned = budgetSum + goal;
   const mName = ymLabel(month).split(' ')[0];
   const isCur = month === curYM();
   const [y,mo] = month.split('-').map(Number);
   const daysLeft = isCur ? new Date(y, mo, 0).getDate() - new Date().getDate() + 1 : 0;
 
-  let h = `<section class="card"><div class="muted">Left from income in ${mName}</div>`;
+  let h = `<section class="card"><div class="muted">Left to spend in ${mName}${goal?' after saving':''}</div>`;
   if (income){
-    const pct = spent/income*100;
+    const avail = income - goal, pct = avail > 0 ? spent/avail*100 : 100;
     h += `<div class="big"${left<0?' style="color:var(--danger)"':''}>${fmt(left)}</div>` +
       bar(pct, pct>100 ? 'var(--danger)' : pct>85 ? 'var(--warn)' : 'var(--ok)') +
-      `<div class="muted small" style="margin-top:6px">${fmt(spent)} spent of ${fmt(income)} income${isCur&&left>0&&daysLeft>0?` · ≈ ${fmt(Math.floor(left/daysLeft))} / day for ${daysLeft} day${daysLeft===1?'':'s'}`:''}</div>`;
+      `<div class="muted small" style="margin-top:6px">${fmt(spent)} spent of ${fmt(income)} income${goal?` − ${fmt(goal)} savings`:''}${isCur&&left>0&&daysLeft>0?` · ≈ ${fmt(Math.floor(left/daysLeft))} / day for ${daysLeft} day${daysLeft===1?'':'s'}`:''}</div>`;
   } else {
     h += `<div class="big">—</div><div class="muted small">Add your paycheck to see how much is left to spend.</div>`;
   }
@@ -632,9 +680,44 @@ function renderBudget(){
   }
   h += `</section>`;
 
+  // Savings: this month + history
+  h += `<section class="card"><h2>🐷 Savings</h2>`;
+  if (income){
+    const sp = saved/income*100;
+    h += `<div class="muted small">${isCur ? 'Saved so far' : 'Saved'} in ${mName}</div><div class="big" style="font-size:32px${saved<0?';color:var(--danger)':''}">${fmt(saved)}</div>
+      <div class="muted small">${Math.round(sp)}% of income${goal ? ` · goal ${fmt(goal)} – ${saved>=goal ? '<b style="color:var(--ok)">reached</b>' : `${fmt(goal-saved)} to go`}` : ''}</div>` +
+      (goal ? bar(saved/goal*100, saved>=goal ? 'var(--ok)' : 'var(--warn)') : '');
+  } else {
+    h += `<p class="muted small" style="margin:0">Add income for ${mName} to see how much you saved.</p>`;
+  }
+  const hist = [...new Set(S.income.map(i => i.ts.slice(0,7)))].sort().reverse().slice(0,12);
+  if (hist.length){
+    let tot = 0;
+    const rows = hist.map(ym => {
+      const inc = monthIncome(ym).reduce((a,i)=>a+i.amt,0), sp = monthTx(ym).reduce((a,t)=>a+t.amt,0), sv = inc - sp; tot += sv;
+      return `<tr><td>${esc(ymLabel(ym).replace(/ (\d{4})$/, (_, y) => y === curYM().slice(0,4) ? '' : ' ' + y))}</td><td>${fmt(inc)}</td><td style="color:${sv<0?'var(--danger)':'var(--ok)'}">${fmt(sv)}</td><td>${inc?Math.round(sv/inc*100):0}%</td></tr>`;
+    }).join('');
+    h += `<table class="hist" style="margin-top:14px"><tr><th>Month</th><th>Income</th><th>Saved</th><th>%</th></tr>${rows}
+      <tr><td><b>Total</b></td><td></td><td><b style="color:${tot<0?'var(--danger)':'var(--ok)'}">${fmt(tot)}</b></td><td></td></tr></table>`;
+  }
+  h += `</section>`;
+
+  // Recurring payments
+  const recs = S.recurring.slice().sort((a,b) => b.amt - a.amt);
+  const recMonth = recurTx(month).reduce((a,t)=>a+t.amt,0);
+  h += `<section class="card"><h2>🔁 Recurring payments <span class="muted small">${recMonth?fmt(recMonth)+' / month':''}</span></h2>
+    <p class="muted small" style="margin:0 0 6px">Deducted automatically every month – no need for them to be in the file.</p>`;
+  if (recs.length) h += `<ul class="list">` + recs.map(r => {
+    const end = recurEnd(r), now = curYM();
+    const status = ymDiff(now, r.start) > 0 ? `starts ${ymShort(r.start)}` : end ? (end < now ? `ended ${ymShort(end)}` : `${ymDiff(now, end)+1}/${r.months} left · to ${ymShort(end)}`) : 'every month';
+    return `<li><button class="row" data-recur="${r.id}">${icon(isCat(r.cat)?r.cat:'Bills')}<span class="mid"><b>${esc(r.name)}</b><small>${esc((r.cat||'Bills') + ' · day ' + (r.day||1) + ' · ' + status)}</small></span><span class="amt">${fmt(r.amt)}</span></button></li>`;
+  }).join('') + `</ul>`;
+  h += `<button class="btn" data-act="add-rec" style="margin-top:${recs.length?'10px':'0'}">＋ Add recurring payment</button></section>`;
+
   // Category budgets (deducted from income)
   h += `<section class="card"><h2>Budgets</h2>
-    <p class="muted small" style="margin:0 0 6px">Monthly limit per category. Leave empty for none.${income ? ` Planned ${fmt(budgetSum)} of ${fmt(income)} · <b${income-budgetSum<0?' style="color:var(--danger)"':''}>${fmt(income-budgetSum)} ${income-budgetSum<0?'over-planned':'unplanned'}</b>` : budgetSum ? ` Planned ${fmt(budgetSum)}.` : ''}</p>`;
+    <p class="muted small" style="margin:0 0 6px">Monthly savings goal and limit per category. Leave empty for none.${income ? ` Planned ${fmt(planned)} of ${fmt(income)} · <b${income-planned<0?' style="color:var(--danger)"':''}>${fmt(income-planned)} ${income-planned<0?'over-planned':'unplanned'}</b>` : planned ? ` Planned ${fmt(planned)}.` : ''}</p>
+    <div class="field"><span class="ico" style="background:#1f9d4826">🐷</span><span class="name">Savings<br><small class="muted">${income ? `${fmt(saved)} saved${goal?` of ${fmt(goal)}`:''}` : 'set aside from income'}</small></span><input class="money" inputmode="decimal" placeholder="—" data-savings="1" value="${goal?fmtNum(goal):''}" aria-label="Monthly savings goal in euros"><span class="muted">€</span></div>`;
   h += cats().map(c => {
     const b = S.budgets[c] || 0, v = totals[c] || 0;
     let sub = `<small class="muted">${fmt(v)} spent</small>`;
@@ -649,8 +732,11 @@ function renderSettings(){
   const rules = Object.entries(S.rules).sort((a,b)=>a[0].localeCompare(b[0]));
   $('#main').innerHTML = `
   <section class="card"><h2>Import</h2>
-    <p class="muted small" style="margin:0 0 12px">Pick <b>spending.txt</b> from iCloud Drive › Shortcuts. You can re-import the same file anytime – lines already imported are skipped.</p>
-    <button class="btn primary" data-act="import">⬇︎ Import spending.txt</button>
+    <p class="muted small" style="margin:0 0 10px"><b>Auto-refresh:</b> paste a direct link to your <b>spending.txt</b>. It's fetched every time the app opens and when you tap ↻. Only new lines are added.</p>
+    <input class="urlin" id="fileUrl" type="url" inputmode="url" placeholder="https://…/spending.txt" value="${esc(S.fileUrl||'')}" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <p class="muted small" style="margin:0 0 12px">Safari can't read iCloud Drive by itself, so the link must download the plain file and allow other sites to fetch it (e.g. a Dropbox share link, or spending.txt hosted next to this app). Without a link, ↻ opens the file picker.</p>
+    ${S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh now</button>` : ''}
+    <button class="btn${S.fileUrl?'':' primary'}" data-act="import">⬇︎ Pick spending.txt manually</button>
   </section>
   <section class="card"><h2>Categories</h2>
     <p class="muted small" style="margin:0 0 6px">Add your own categories. Monthly budgets are set in the <b>Budget</b> tab.</p>
@@ -789,7 +875,7 @@ function openIncome({item=null, review=null} = {}){
   document.body.style.overflow = 'hidden';
   if (!item && !review) setTimeout(() => $('#fAmt').focus(), 50);
 }
-function closeSheet(){ closeEditor(); inc = null; }
+function closeSheet(){ closeEditor(); inc = null; rec = null; }
 function saveIncome(){
   const amt = parseAmount($('#fAmt').value);
   if (amt == null || amt === 0){ toast('Please enter an amount, e.g. 1.850,00'); $('#fAmt').focus(); return; }
@@ -816,11 +902,48 @@ function copyLastIncome(){
   save(); render(); toast(`Copied ${prev.length} income entr${prev.length===1?'y':'ies'}`);
 }
 
+/* ================= recurring payments ================= */
+let rec = null; // {id}
+function openRecurring(item = null){
+  rec = {id: item && item.id};
+  const r = item || {name:'', amt:null, cat:'Bills', start:month, months:12, day:1};
+  $('#sheet').innerHTML = `<div class="sheet-bg" data-act="close"></div>
+  <form class="sheet" id="recForm" autocomplete="off">
+    <div class="grab"></div><h2>${item ? 'Edit recurring payment' : 'Add recurring payment'}</h2>
+    <label for="fAmt">Amount per month (€)</label><input id="fAmt" inputmode="decimal" placeholder="0,00" value="${r.amt!=null?fmtNum(r.amt):''}">
+    <label for="rName">Name</label><input id="rName" value="${esc(r.name)}" placeholder="e.g. Phone installment" autocapitalize="words">
+    <label for="rCat">Category</label><select id="rCat">${cats().map(c=>`<option value="${esc(c)}" ${c===(r.cat||'Bills')?'selected':''}>${meta(c).e} ${esc(c)}</option>`).join('')}</select>
+    <label for="rStart">First month</label><input id="rStart" type="month" value="${r.start}">
+    <label for="rMonths">Number of months (empty = no end)</label><input id="rMonths" type="number" inputmode="numeric" min="1" max="600" value="${r.months||''}" placeholder="no end">
+    <label for="rDay">Day of the month</label><input id="rDay" type="number" inputmode="numeric" min="1" max="31" value="${r.day||1}">
+    <div class="btns">${item ? `<button type="button" class="btn danger" data-act="rec-del">Delete</button>` : `<button type="button" class="btn" data-act="close">Cancel</button>`}<button type="submit" class="btn primary">Save</button></div>
+    ${item ? `<button type="button" class="btn plain" data-act="close">Cancel</button>` : ''}
+  </form>`;
+  $('#sheet').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  if (!item) setTimeout(() => $('#fAmt').focus(), 50);
+}
+function saveRecurring(){
+  const amt = parseAmount($('#fAmt').value);
+  if (amt == null || amt <= 0){ toast('Please enter an amount, e.g. 29,99'); $('#fAmt').focus(); return; }
+  const name = $('#rName').value.trim() || 'Recurring payment';
+  const start = $('#rStart').value;
+  if (!/^\d{4}-\d{2}$/.test(start)){ toast('Please pick the first month'); return; }
+  const mv = $('#rMonths').value.trim(), months = mv ? Math.max(1, Math.min(600, parseInt(mv,10) || 1)) : 0;
+  const day = Math.max(1, Math.min(31, parseInt($('#rDay').value,10) || 1));
+  const data = {name, amt, cat:$('#rCat').value || 'Bills', start, months, day};
+  if (rec.id) Object.assign(S.recurring.find(r => r.id === rec.id), data);
+  else S.recurring.push(Object.assign({id:uid()}, data));
+  save(); closeSheet(); render();
+  toast(`🔁 ${name}: ${fmt(amt)} / month` + (months ? ` for ${months} month${months===1?'':'s'}` : ''));
+}
+
 /* ================= CSV ================= */
 const CSV_COLS = ['id','date','time','amount','currency','merchant','place','category','type','source','note','key','purpose','ask'];
 function csvCell(v){ v = String(v ?? ''); return /[";\n\r]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; }
 function toCSV(){
   const all = S.tx.concat(S.income.map(i => ({id:i.id, ts:i.ts, amt:i.amt, m:i.note, cat:'Income', type:'INCOME', src:'income', k:i.k})));
+  S.recurring.forEach(r => all.push({id:r.id, ts:`${r.start}-${pad(r.day||1)}T00:00`, amt:r.amt, m:r.name, cat:r.cat, type:'RECURRING', src:'recurring', note:String(r.months||0)}));
   const rows = all.sort((a,b)=>a.ts.localeCompare(b.ts)).map(t =>
     [t.id, t.ts.slice(0,10), t.ts.slice(11,16), fmtNum(t.amt), 'EUR', t.m, t.place||'', t.cat, t.type||'', t.src, t.note||'', t.k||'', t.purpose||'', t.ask||''].map(csvCell).join(';'));
   return '﻿' + CSV_COLS.join(';') + '\r\n' + rows.join('\r\n') + '\r\n';
@@ -846,7 +969,7 @@ function restoreCSV(text){
   const head = rows.shift().map(h => h.trim().toLowerCase());
   const ix = n => head.indexOf(n);
   if (ix('date') < 0 || ix('amount') < 0){ toast('Not a Spending backup CSV'); return; }
-  const ids = new Set(S.tx.concat(S.income).map(t => t.id));
+  const ids = new Set(S.tx.concat(S.income, S.recurring).map(t => t.id));
   let added = 0;
   for (const r of rows){
     const get = n => ix(n) >= 0 ? (r[ix(n)] || '').trim() : '';
@@ -856,7 +979,10 @@ function restoreCSV(text){
     if (ids.has(id)) continue;
     const k = get('key') || null;
     const ts = d + 'T' + (/^\d{2}:\d{2}$/.test(get('time')) ? get('time') : '00:00');
-    if (get('source') === 'income'){
+    if (get('source') === 'recurring'){
+      let cat = get('category'); if (!isCat(cat)) cat = cat ? addCat(cat) || 'Bills' : 'Bills';
+      S.recurring.push({id, name:get('merchant') || 'Recurring payment', amt:Math.abs(amt), cat, start:d.slice(0,7), months:parseInt(get('note'),10) || 0, day:+d.slice(8,10) || 1});
+    } else if (get('source') === 'income'){
       S.income.push({id, k, ts, amt:Math.abs(amt), note:get('merchant') || 'Paycheck'});
     } else {
       let cat = get('category');
@@ -892,6 +1018,7 @@ document.addEventListener('click', e => {
   if (d.edit){ const t = S.tx.find(x => x.id === d.edit); if (t) openEditor({tx:t}); return; }
   if (d.pick){ ed.catTouched = true; pickCat(d.pick); return; }
   if (d.ans){ answerAsk(d.ans, d.cat, d.label); return; }
+  if (d.recur){ const r = S.recurring.find(x => x.id === d.recur); if (r) openRecurring(r); return; }
   if (d.inc){ const i = S.income.find(x => x.id === d.inc); if (i) openIncome({item:i}); return; }
   if (d.rinc){ const r = S.review.find(x => x.id === d.rinc); if (r) openIncome({review:r}); return; }
   if (d.delcat){
@@ -911,6 +1038,11 @@ document.addEventListener('click', e => {
     case 'close': closeSheet(); break;
     case 'newcat': newCatFromEditor(); break;
     case 'add-inc': openIncome(); break;
+    case 'add-rec': openRecurring(); break;
+    case 'refresh': refreshFile(); break;
+    case 'rec-del':
+      if (confirm('Delete this recurring payment? It disappears from every month.')){ S.recurring = S.recurring.filter(r => r.id !== rec.id); save(); closeSheet(); render(); toast('Deleted'); }
+      break;
     case 'copy-inc': copyLastIncome(); break;
     case 'inc-del':
       if (confirm('Delete this income?')){ S.income = S.income.filter(i => i.id !== inc.id); save(); closeSheet(); render(); toast('Deleted'); }
@@ -935,6 +1067,7 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   if (e.target.id === 'edForm') saveEditor();
   else if (e.target.id === 'incForm') saveIncome();
+  else if (e.target.id === 'recForm') saveRecurring();
   else if (e.target.id === 'catForm'){
     const c = addCat($('#cName').value, $('#cEmo').value);
     if (c){ save(); render(); toast(`${meta(c).e} ${c} added`); }
@@ -945,6 +1078,20 @@ document.addEventListener('input', e => {
   if (e.target.id === 'fMer' && ed && !ed.catTouched) pickCat(guessCat(e.target.value));
 });
 document.addEventListener('change', e => {
+  if (e.target.id === 'fileUrl'){
+    const u = e.target.value.trim();
+    if (u && !/^https?:\/\//i.test(u)){ toast('The link must start with https://'); return; }
+    S.fileUrl = u; save(); render();
+    if (u) refreshFile(); else toast('Auto-refresh turned off');
+    return;
+  }
+  if (e.target.dataset && e.target.dataset.savings){
+    const v = parseAmount(e.target.value);
+    S.savingsGoal = v && v > 0 ? v : 0; save();
+    toast(S.savingsGoal ? `Savings goal: ${fmt(S.savingsGoal)} / month` : 'Savings goal removed');
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+    return;
+  }
   const c = e.target.dataset && e.target.dataset.budget;
   if (c){
     const v = parseAmount(e.target.value);
@@ -969,6 +1116,13 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
 }
 
 render();
+refreshFile({quiet:true}); // pull the latest spending.txt on every start
+/* A Home Screen app is often resumed instead of reloaded: refresh then too */
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) hiddenAt = Date.now();
+  else if (hiddenAt && Date.now() - hiddenAt > 60000) refreshFile({quiet:true});
+});
 </script>
 </body>
 </html>
