@@ -65,6 +65,19 @@ h1{font-size:28px;font-weight:700;margin:0;letter-spacing:-.02em}
 .btns{display:flex;gap:10px}.btns .btn{margin:0}
 .banner{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:12px 16px;border-radius:14px;background:color-mix(in srgb,var(--warn) 16%,var(--card));color:var(--text);font-weight:500;text-align:left;margin:12px 0}
 .banner span{flex:1}
+.banner.ok{background:color-mix(in srgb,var(--ok) 14%,var(--card))}
+.amt.pos{color:var(--ok)}
+.qbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.qbtns .chip{background:var(--bg);box-shadow:none}
+.askhead{display:flex;align-items:center;gap:12px}
+.askhead .mid{flex:1;min-width:0}
+.askhead b{display:block}
+.sheet select{display:block;width:100%;min-height:50px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:0 14px;font-size:17px}
+.addcat{display:flex;gap:8px;margin-top:10px}
+.addcat input{min-height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:0 12px;font-size:17px;-webkit-appearance:none;appearance:none}
+.addcat .emo{width:64px;text-align:center}
+.addcat .nm{flex:1;min-width:0}
+.addcat .btn{width:auto;min-height:48px}
 
 /* progress */
 .bar{height:8px;border-radius:4px;background:var(--track);overflow:hidden;margin-top:8px}
@@ -138,6 +151,7 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;justify-
 .sheet input{display:block;width:100%;min-height:50px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:0 14px;font-size:17px;-webkit-appearance:none;appearance:none}
 .sheet input#fAmt{font-size:28px;font-weight:700;min-height:60px}
 .catgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.cbtn.new{border:2px dashed var(--line);background:none;color:var(--accent)}
 .cbtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:66px;border-radius:12px;background:var(--bg);font-size:12px;font-weight:500;border:2px solid transparent;padding:4px 2px;text-align:center;line-height:1.15}
 .cbtn span{font-size:22px}
 .cbtn.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--card))}
@@ -161,6 +175,7 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;justify-
 <nav class="tabs" id="tabs">
   <button class="tab" data-tab="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>Overview</button>
   <button class="tab" data-tab="tx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>Transactions</button>
+  <button class="tab" data-tab="budget"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/><path d="M7 6V4.5h10V6"/></svg>Budget</button>
   <button class="tab" data-tab="review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg>Review<span class="badge hidden" id="badge"></span></button>
   <button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
 </nav>
@@ -174,7 +189,7 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;justify-
 'use strict';
 /* ================= constants ================= */
 const STORE = 'spending-tracker-v1';
-const CATS = ['Groceries','Eating out','Transport','Shopping','Bills','Health','Fun','Other'];
+const BASE_CATS = ['Groceries','Eating out','Transport','Shopping','Bills','Health','Fun','Cash','Other'];
 const META = {
   'Groceries':  {e:'🛒', c:'#2fa84f'},
   'Eating out': {e:'🍽️', c:'#f29900'},
@@ -183,6 +198,7 @@ const META = {
   'Bills':      {e:'🧾', c:'#e04f3c'},
   'Health':     {e:'💊', c:'#10a5b8'},
   'Fun':        {e:'🎉', c:'#e2338b'},
+  'Cash':       {e:'💶', c:'#6f8f2f'},
   'Other':      {e:'📦', c:'#8e8e93'},
 };
 /* Keywords are matched against the merchant name (uppercase, accents removed).
@@ -196,8 +212,14 @@ const KEYWORDS = [
   ['Fun', ['KINO','CINEPLEXX*','KOLOSEJ','CINEMA*','NETFLIX*','SPOTIFY*','DISNEY*','HBO*','MAX','YOUTUBE*','STEAM*','PLAYSTATION','XBOX','NINTENDO','EPIC GAMES','TWITCH','EVENTIM','MOJEKARTE','TICKET*','KONCERT*','MUZEJ','MUSEUM','GALERIJ*','TERME','WELLNESS','BOWLING','ZOO','AQUAPARK','LOTERIJ*','BOOKING*','AIRBNB','HOTEL*','HOSTEL','KAMP']],
   ['Shopping', ['AMAZON*','AMZN*','ZALANDO','H&M','HM','ZARA','BERSHKA','PULL&BEAR','STRADIVARIUS','MANGO','RESERVED','C&A','NEW YORKER','PRIMARK','IKEA','JYSK','MERKUR','BAUHAUS','OBI','HORNBACH','DM','MULLER','BIPA','BIG BANG','BIGBANG','HARVEY NORMAN','MIMOVRSTE','DECATHLON','INTERSPORT','HERVIS','SPORTINA','NAMA','ALIEXPRESS','TEMU','SHEIN','EBAY','TEDI','PEPCO','KIK','ACTION','CCC','DEICHMANN','OFFICE SHOES','HUMANIC','NORMAL','FLYING TIGER','KNJIGARN*','MLADINSKA KNJIGA','APPLE STORE']],
 ];
-/* Bank transaction types that are not regular spending → Needs review */
-const NOT_SPENDING = /PRILIV|PREJEM|VRACILO|DOBROPIS|STORNO|NAKAZILO|DVIG|POLOG|BREMENITEV ZAVRNJENA/;
+const CUSTOM_COLORS = ['#ff7a45','#7c5cff','#00a88f','#d4a106','#ef4f9b','#3f8cff','#a0522d','#5f9ea0'];
+/* Bank transaction types that are not regular spending → Needs review
+   (STORNO = refund and DVIG = cash withdrawal are handled before this check) */
+const NOT_SPENDING = /PRILIV|PREJEM|VRACILO|DOBROPIS|NAKAZILO|POLOG|BREMENITEV ZAVRNJENA/;
+const INCOMING = /PRILIV|PREJEM|DOBROPIS|POLOG|VRACILO/;
+const IS_STORNO = /(^| )STORNO/;
+const IS_DVIG = /(^| )DVIG/;
+const IS_REVOLUT = /REVOLUT/;
 
 /* ================= helpers ================= */
 const $ = s => document.querySelector(s);
@@ -261,7 +283,7 @@ const sanitize = s => String(s)
   .replace(/,?\s*info\s*\+?\d[\d ]{6,}\s*$/i, '');
 
 /* ================= storage ================= */
-function blank(){ return {v:1, tx:[], review:[], rules:{}, budgets:{}, seen:{}}; }
+function blank(){ return {v:1, tx:[], review:[], rules:{}, budgets:{}, seen:{}, income:[], cats:[]}; }
 function load(){
   try { const d = JSON.parse(localStorage.getItem(STORE)); if (d && d.v === 1) return Object.assign(blank(), d); } catch(e){}
   return blank();
@@ -274,6 +296,27 @@ function save(){
 try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(e){}
 
 /* ================= categories ================= */
+/* Built-in categories plus the user's own ones (S.cats = [{name, e, c}]) */
+const cats = () => { const b = BASE_CATS.slice(0,-1); return b.concat(S.cats.map(c => c.name).filter(n => !b.includes(n) && n !== 'Other'), ['Other']); };
+const isCat = c => cats().includes(c);
+const meta = c => META[c] || S.cats.find(x => x.name === c) || META.Other;
+const catOf = t => isCat(t.cat) ? t.cat : 'Other';
+function addCat(name, e){
+  name = String(name || '').trim().replace(/\s+/g,' ').slice(0,24);
+  if (!name) return null;
+  const hit = cats().find(c => c.toLowerCase() === name.toLowerCase());
+  if (hit) return hit;
+  if (name.toLowerCase() === 'income') { toast('“Income” is reserved for paychecks'); return null; }
+  const em = (String(e || '').trim().match(/\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*/u) || [])[0] || '🏷️';
+  S.cats.push({name, e:em, c:CUSTOM_COLORS[S.cats.length % CUSTOM_COLORS.length]});
+  return name;
+}
+function removeCat(name){
+  S.cats = S.cats.filter(c => c.name !== name);
+  S.tx.forEach(t => { if (t.cat === name) t.cat = 'Other'; if (t.purpose === name) delete t.purpose; });
+  Object.keys(S.rules).forEach(k => { if (S.rules[k] === name) delete S.rules[k]; });
+  delete S.budgets[name];
+}
 const CAT_RE = KEYWORDS.map(([cat, words]) => {
   const alts = words.map(w => {
     const pre = w.endsWith('*'); const base = (pre ? w.slice(0,-1) : w).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -284,7 +327,7 @@ const CAT_RE = KEYWORDS.map(([cat, words]) => {
 function guessCat(merchant){
   const k = merchantKey(merchant || '');
   if (!k) return 'Other';
-  if (S.rules[k]) return S.rules[k];
+  if (S.rules[k] && isCat(S.rules[k])) return S.rules[k];
   const n = norm(merchant);
   for (const [cat, re] of CAT_RE) if (re.test(n)) return cat;
   return 'Other';
@@ -302,7 +345,15 @@ function parseLine(line){
     const place = (m[5]||'').replace(/\s*Banka Sparkasse.*$/i,'').trim();
     const tx = {ts, amt, m: merchant, place, type, src:'bank'};
     if (amt == null || !ts) return {ok:false, reason:'Could not read amount or date', guess:tx};
-    if (NOT_SPENDING.test(norm(type))) return {ok:false, reason:`Not a purchase (${type}) – incoming money, refund or cash withdrawal?`, guess:tx};
+    const n = norm(line), nt = norm(type);
+    // STORNO = money returned to the account → refund that lowers spending
+    if (IS_STORNO.test(n)){ tx.amt = -Math.abs(amt); tx.refund = true; return {ok:true, tx}; }
+    // DVIG = cash withdrawal → own category, ask what it was for
+    if (IS_DVIG.test(n)){ tx.amt = Math.abs(amt); tx.cat = 'Cash'; tx.ask = 'cash'; tx.place = [merchant, place].filter(Boolean).join(', '); tx.m = 'Cash withdrawal'; return {ok:true, tx}; }
+    // Money sent to Revolut → ask what it was spent on
+    if (IS_REVOLUT.test(n) && !INCOMING.test(nt)){ tx.amt = Math.abs(amt); tx.ask = 'revolut'; tx.cat = 'Other'; return {ok:true, tx}; }
+    if (INCOMING.test(nt)) return {ok:false, reason:`Incoming money (${type}) – paycheck? Tap Income to add it to your budget.`, guess:tx, incoming:true};
+    if (NOT_SPENDING.test(nt)) return {ok:false, reason:`Not a purchase (${type}) – transfer or other bank operation?`, guess:tx};
     return {ok:true, tx};
   }
   m = line.match(AP_RE);
@@ -310,6 +361,7 @@ function parseLine(line){
     const amt = parseAmount(m[1]), ts = euToTs(m[3]);
     const tx = {ts, amt, m: m[2].trim(), place:'', type:'APPLE PAY', src:'applepay'};
     if (amt == null || !ts) return {ok:false, reason:'Could not read amount or date', guess:tx};
+    if (IS_REVOLUT.test(norm(tx.m))){ tx.ask = 'revolut'; tx.cat = 'Other'; }
     return {ok:true, tx};
   }
   // Unknown format: make a best-effort guess so fixing is quick
@@ -323,11 +375,17 @@ function findTwin(tx){
   const t0 = minutes(tx.ts);
   return S.tx.find(t => (t.src==='bank'||t.src==='applepay') && t.src !== tx.src && t.amt === tx.amt && Math.abs(minutes(t.ts)-t0) <= 15) || null;
 }
+/* Category for a refund: same as the original purchase from that merchant, if we can find it */
+function refundCat(tx){
+  const k = merchantKey(tx.m), a = Math.abs(tx.amt);
+  const orig = S.tx.filter(t => !t.refund && merchantKey(t.m) === k && t.ts <= tx.ts).sort((x,y) => (Math.abs(x.amt-a) - Math.abs(y.amt-a)) || y.ts.localeCompare(x.ts))[0];
+  return orig ? catOf(orig) : guessCat(tx.m);
+}
 
 async function importText(text){
   const lines = text.split(/\r\n|\n|\r/);
   const occ = {};
-  let added = 0, review = 0, skipped = 0, latest = null;
+  let added = 0, review = 0, skipped = 0, asks = 0, refunds = 0, latest = null;
   for (const raw of lines){
     const line = raw.replace(/ /g,' ').replace(/\s+/g,' ').trim();
     if (!line) continue;
@@ -342,8 +400,11 @@ async function importText(text){
         S.review.push({id:uid(), k, raw:sanitize(line), reason:`Possible duplicate of ${twin.m} ${fmt(twin.amt)} on ${fmtDate(twin.ts)} (${twin.src==='bank'?'bank SMS':'Apple Pay'})`, guess:r.tx});
         review++;
       } else {
-        S.tx.push(Object.assign({id:uid(), k, cat:guessCat(r.tx.m), note:''}, r.tx));
+        const cat = r.tx.cat || (r.tx.refund ? refundCat(r.tx) : guessCat(r.tx.m));
+        S.tx.push(Object.assign({id:uid(), k, note:''}, r.tx, {cat}));
         added++;
+        if (r.tx.ask) asks++;
+        if (r.tx.refund) refunds++;
         if (!latest || r.tx.ts > latest) latest = r.tx.ts;
       }
     } else {
@@ -355,10 +416,27 @@ async function importText(text){
   if (latest && added) month = latest.slice(0,7);
   render();
   const parts = [`${added} new`];
+  if (refunds) parts.push(`${refunds} refund${refunds===1?'':'s'}`);
+  if (asks) parts.push(`${asks} need a category`);
   if (review) parts.push(`${review} need review`);
   if (skipped) parts.push(`${skipped} already imported`);
   toast('Import done: ' + parts.join(' · '));
 }
+
+/* Lines imported before refunds / cash / Revolut were recognized are sitting in review: convert them */
+function migrateReview(){
+  let n = 0;
+  S.review = S.review.filter(r => {
+    if (!/STORNO|DVIG|REVOLUT/i.test(deacc(r.raw))) return true;
+    const p = parseLine(r.raw);
+    if (!p.ok || !(p.tx.refund || p.tx.ask)) return true;
+    const cat = p.tx.cat || (p.tx.refund ? refundCat(p.tx) : guessCat(p.tx.m));
+    S.tx.push(Object.assign({id:uid(), k:r.k, note:''}, p.tx, {cat})); n++;
+    return false;
+  });
+  if (n) save();
+}
+migrateReview();
 
 /* ================= state ================= */
 let view = 'overview';
@@ -367,16 +445,22 @@ let filterCat = null;
 let query = '';
 
 function monthTx(ym){ return S.tx.filter(t => t.ts.startsWith(ym)).sort((a,b) => b.ts.localeCompare(a.ts)); }
-function catTotals(list){ const o = {}; CATS.forEach(c => o[c]=0); list.forEach(t => { o[CATS.includes(t.cat)?t.cat:'Other'] += t.amt; }); return o; }
+function catTotals(list){ const o = {}; cats().forEach(c => o[c]=0); list.forEach(t => { o[catOf(t)] += t.amt; }); return o; }
+const monthIncome = ym => S.income.filter(i => i.ts.startsWith(ym)).sort((a,b) => b.ts.localeCompare(a.ts));
+const askList = () => S.tx.filter(t => t.ask).sort((a,b) => b.ts.localeCompare(a.ts));
+const todoCount = () => S.review.length + askList().length;
 
 /* ================= rendering ================= */
-const icon = cat => `<span class="ico" style="background:${META[cat].c}26">${META[cat].e}</span>`;
+const icon = cat => `<span class="ico" style="background:${meta(cat).c}26">${meta(cat).e}</span>`;
 function txRow(t){
-  const cat = CATS.includes(t.cat) ? t.cat : 'Other';
+  const cat = catOf(t);
   const bits = [cat, t.ts.slice(11,16)];
+  if (t.refund) bits.push('Refund');
+  if (t.purpose) bits.push('for ' + t.purpose);
+  if (t.ask) bits.push('❓ what was it for?');
   if (t.src==='manual') bits.push('manual'); else if (t.src==='applepay') bits.push('Apple Pay');
   if (t.note) bits.push(t.note); else if (t.place) bits.push(t.place);
-  return `<li><button class="row" data-edit="${t.id}">${icon(cat)}<span class="mid"><b>${esc(t.m||'—')}</b><small>${esc(bits.join(' · '))}</small></span><span class="amt">${fmt(t.amt)}</span></button></li>`;
+  return `<li><button class="row" data-edit="${t.id}">${icon(cat)}<span class="mid"><b>${esc(t.m||'—')}</b><small>${esc(bits.join(' · '))}</small></span><span class="amt${t.amt<0?' pos':''}">${t.amt<0?'+'+fmt(-t.amt):fmt(t.amt)}</span></button></li>`;
 }
 function groupedList(list){
   if (!list.length) return '';
@@ -390,9 +474,9 @@ function groupedList(list){
 function bar(pct, color){ return `<div class="bar"><i style="width:${Math.max(0,Math.min(100,pct)).toFixed(1)}%;background:${color}"></i></div>`; }
 
 function renderHeader(){
-  const titles = {overview:'Spending', tx:'Transactions', review:'Needs review', settings:'Settings'};
-  const showMonth = view==='overview' || view==='tx';
-  const latestData = S.tx.reduce((a,t) => t.ts.slice(0,7) > a ? t.ts.slice(0,7) : a, curYM());
+  const titles = {overview:'Spending', tx:'Transactions', budget:'Budget', review:'Needs review', settings:'Settings'};
+  const showMonth = view==='overview' || view==='tx' || view==='budget';
+  const latestData = S.tx.concat(S.income).reduce((a,t) => t.ts.slice(0,7) > a ? t.ts.slice(0,7) : a, curYM());
   $('#hdr').innerHTML = `<div class="hrow"><h1>${titles[view]}</h1></div>` + (showMonth ?
     `<div class="month"><button class="mbtn" data-act="prev" aria-label="Previous month">‹</button><b>${ymLabel(month)}</b><button class="mbtn" data-act="next" aria-label="Next month" ${month>=latestData?'disabled':''}>›</button></div>` : '');
 }
@@ -401,7 +485,7 @@ function renderOverview(){
   const list = monthTx(month);
   const total = list.reduce((a,t)=>a+t.amt,0);
   const totals = catTotals(list);
-  const budgetSum = CATS.reduce((a,c)=>a+(S.budgets[c]||0),0);
+  const budgetSum = cats().reduce((a,c)=>a+(S.budgets[c]||0),0);
   const isCur = month === curYM();
   const [y,mo] = month.split('-').map(Number);
   const days = isCur ? new Date().getDate() : new Date(y, mo, 0).getDate();
@@ -414,20 +498,23 @@ function renderOverview(){
       `<div class="muted small" style="margin-top:6px">${left>=0 ? `${fmt(left)} left of ${fmt(budgetSum)} budget` : `<span style="color:var(--danger)">${fmt(-left)} over</span> the ${fmt(budgetSum)} budget`}</div>`;
   }
   h += `</section>`;
-  if (S.review.length) h += `<button class="banner" data-tab="review">⚠️<span>${S.review.length} line${S.review.length===1?'':'s'} need${S.review.length===1?'s':''} review</span>›</button>`;
+  const todo = todoCount();
+  if (todo) h += `<button class="banner" data-tab="review">⚠️<span>${todo} item${todo===1?'':'s'} need${todo===1?'s':''} your input</span>›</button>`;
+  const inc = monthIncome(month).reduce((a,i)=>a+i.amt,0);
+  if (inc) h += `<button class="banner ok" data-tab="budget">💰<span>${fmt(inc-total)} left of ${fmt(inc)} income</span>›</button>`;
   h += `<button class="btn primary" data-act="import">⬇︎ Import spending.txt</button>`;
 
   // Category breakdown
   h += `<section class="card"><h2>By category</h2>`;
-  const used = CATS.filter(c => totals[c] !== 0 || S.budgets[c]);
+  const used = cats().filter(c => totals[c] !== 0 || S.budgets[c]);
   if (!list.length && !used.length){
     h += `<div class="empty"><div class="e">🧾</div>No spending in ${ymLabel(month)} yet.<br>Import your file or tap + to add one.</div>`;
   } else {
-    const pos = CATS.reduce((a,c)=>a+Math.max(0,totals[c]),0);
+    const pos = cats().reduce((a,c)=>a+Math.max(0,totals[c]),0);
     if (pos > 0){
       let off = 0, segs = '';
-      for (const c of CATS){ const v = Math.max(0,totals[c]); if (!v) continue; const p = v/pos*100;
-        segs += `<circle r="15.9155" cx="21" cy="21" fill="none" stroke="${META[c].c}" stroke-width="5.5" stroke-dasharray="${p.toFixed(3)} ${(100-p).toFixed(3)}" stroke-dashoffset="${(25-off).toFixed(3)}"/>`; off += p; }
+      for (const c of cats()){ const v = Math.max(0,totals[c]); if (!v) continue; const p = v/pos*100;
+        segs += `<circle r="15.9155" cx="21" cy="21" fill="none" stroke="${meta(c).c}" stroke-width="5.5" stroke-dasharray="${p.toFixed(3)} ${(100-p).toFixed(3)}" stroke-dashoffset="${(25-off).toFixed(3)}"/>`; off += p; }
       h += `<div class="donut"><svg viewBox="0 0 42 42" role="img" aria-label="Spending by category"><circle r="15.9155" cx="21" cy="21" fill="none" stroke="var(--track)" stroke-width="5.5"/>${segs}
         <text x="21" y="20.2" text-anchor="middle" font-size="3.2" fill="var(--muted)">Total</text>
         <text x="21" y="24.6" text-anchor="middle" font-size="${fmt(total).length>11?3.6:4.4}" font-weight="700" fill="var(--text)">${esc(fmt(total))}</text></svg></div>`;
@@ -438,14 +525,14 @@ function renderOverview(){
       let sub, br;
       if (b){
         const pct = v/b*100, left = b - v;
-        br = bar(pct, pct>100 ? 'var(--danger)' : pct>85 ? 'var(--warn)' : META[c].c);
+        br = bar(pct, pct>100 ? 'var(--danger)' : pct>85 ? 'var(--warn)' : meta(c).c);
         sub = `<span>${Math.round(pct)}% of ${fmt(b)}</span><span${left<0?' style="color:var(--danger)"':''}>${left>=0?fmt(left)+' left':fmt(-left)+' over'}</span>`;
       } else {
         const pct = total>0 ? v/total*100 : 0;
-        br = bar(pct, META[c].c);
+        br = bar(pct, meta(c).c);
         sub = `<span>${Math.round(pct)}% of month</span><span></span>`;
       }
-      return `<li><button class="cat" data-cat-filter="${esc(c)}"><div class="top">${icon(c)}<span class="name">${c}</span><span class="amt">${fmt(v)}</span></div>${br}<div class="sub">${sub}</div></button></li>`;
+      return `<li><button class="cat" data-cat-filter="${esc(c)}"><div class="top">${icon(c)}<span class="name">${esc(c)}</span><span class="amt">${fmt(v)}</span></div>${br}<div class="sub">${sub}</div></button></li>`;
     }).join('') + `</ul>`;
   }
   h += `</section>`;
@@ -459,7 +546,7 @@ function renderOverview(){
 
 function renderTx(){
   $('#main').innerHTML = `<input class="search" id="q" type="search" placeholder="Search merchant or note" value="${esc(query)}" autocomplete="off">
-    <div class="chips"><button class="chip ${!filterCat?'on':''}" data-chip="">All</button>${CATS.map(c=>`<button class="chip ${filterCat===c?'on':''}" data-chip="${esc(c)}">${META[c].e} ${c}</button>`).join('')}</div>
+    <div class="chips"><button class="chip ${!filterCat?'on':''}" data-chip="">All</button>${cats().map(c=>`<button class="chip ${filterCat===c?'on':''}" data-chip="${esc(c)}">${meta(c).e} ${esc(c)}</button>`).join('')}</div>
     <div id="txlist"></div>`;
   renderTxList();
 }
@@ -472,15 +559,89 @@ function renderTxList(){
     : `<div class="card empty"><div class="e">🔍</div>No transactions${filterCat?' in '+filterCat:''}${q?' matching “'+esc(query)+'”':''} for ${ymLabel(month)}.</div>`;
 }
 
+/* Quick answers for "what was this for?" */
+function amazonCat(){ return cats().find(c => c.toLowerCase() === 'amazon') || 'Shopping'; }
+function askButtons(t){
+  if (t.ask === 'revolut'){
+    const opts = [['Bills','Bills'], ['Fun','Fun'], [amazonCat(),'Amazon']];
+    return opts.map(([c,label]) => `<button class="chip" data-ans="${t.id}" data-cat="${esc(c)}" data-label="${esc(label)}">${meta(c).e} ${esc(label)}</button>`).join('') +
+      `<button class="chip" data-edit="${t.id}">Other…</button>`;
+  }
+  return cats().filter(c => c !== 'Cash').map(c => `<button class="chip" data-ans="${t.id}" data-cat="${esc(c)}">${meta(c).e} ${esc(c)}</button>`).join('') +
+    `<button class="chip" data-ans="${t.id}" data-cat="">Skip</button>`;
+}
+function answerAsk(id, cat, label){
+  const t = S.tx.find(x => x.id === id); if (!t) return;
+  if (t.ask === 'cash'){ if (cat) t.purpose = cat; }
+  else { t.cat = cat; if (label === 'Amazon' && cat !== 'Amazon' && !t.note) t.note = 'Amazon'; }
+  delete t.ask;
+  save(); render();
+  toast(t.cat === 'Cash' ? (cat ? `Cash withdrawal for ${cat}` : 'Kept as cash withdrawal') : `${meta(t.cat).e} Revolut transfer → ${label || t.cat}`);
+}
 function renderReview(){
-  let h = `<p class="muted small" style="margin:4px 4px 0">Lines from your file that weren't recognized as purchases. Tap <b>Fix</b> to turn one into a transaction, or <b>Delete</b> to ignore it. Deleted lines won't come back on the next import.</p>`;
+  const asks = askList();
+  let h = '';
+  if (asks.length){
+    h += `<p class="muted small" style="margin:4px 4px 0"><b>What was it for?</b> Cash withdrawals and money sent to Revolut. Pick a category.</p>`;
+    h += asks.map(t => `<div class="card"><div class="askhead">${icon(catOf(t))}<span class="mid"><b>${t.ask==='cash'?'Cash withdrawal':'Sent to Revolut'} · ${fmt(t.amt)}</b><small class="muted">${esc(fmtDate(t.ts))}${t.place?' · '+esc(t.place):''}</small></span></div>
+      <div class="muted small" style="margin-top:8px">${t.ask==='cash'?'Withdrawn for:':'Spent on:'}</div><div class="qbtns">${askButtons(t)}</div></div>`).join('');
+  }
+  if (S.review.length || !asks.length)
+    h += `<p class="muted small" style="margin:${asks.length?'18px':'4px'} 4px 0">Lines from your file that weren't recognized as purchases. Tap <b>Fix</b> to turn one into a transaction, <b>Income</b> to add it as a paycheck, or <b>Delete</b> to ignore it. Deleted lines won't come back on the next import.</p>`;
   if (!S.review.length){
-    h += `<div class="card empty"><div class="e">✅</div>Nothing to review.</div>`;
+    if (!asks.length) h += `<div class="card empty"><div class="e">✅</div>Nothing to review.</div>`;
   } else {
     h += S.review.map(r => `<div class="card"><div class="reason">${esc(r.reason)}</div><div class="raw">${esc(r.raw)}</div>
-      <div class="btns"><button class="btn danger" data-rdel="${r.id}">Delete</button><button class="btn primary" data-rfix="${r.id}">Fix</button></div></div>`).join('');
+      <div class="btns"><button class="btn danger" data-rdel="${r.id}">Delete</button><button class="btn" data-rinc="${r.id}">Income</button><button class="btn primary" data-rfix="${r.id}">Fix</button></div></div>`).join('');
     if (S.review.length > 1) h += `<button class="btn danger" data-act="rdelall" style="margin-bottom:12px">Delete all ${S.review.length}</button>`;
   }
+  $('#main').innerHTML = h;
+}
+
+function renderBudget(){
+  const incs = monthIncome(month);
+  const income = incs.reduce((a,i)=>a+i.amt,0);
+  const list = monthTx(month);
+  const spent = list.reduce((a,t)=>a+t.amt,0);
+  const totals = catTotals(list);
+  const left = income - spent;
+  const budgetSum = cats().reduce((a,c)=>a+(S.budgets[c]||0),0);
+  const mName = ymLabel(month).split(' ')[0];
+  const isCur = month === curYM();
+  const [y,mo] = month.split('-').map(Number);
+  const daysLeft = isCur ? new Date(y, mo, 0).getDate() - new Date().getDate() + 1 : 0;
+
+  let h = `<section class="card"><div class="muted">Left from income in ${mName}</div>`;
+  if (income){
+    const pct = spent/income*100;
+    h += `<div class="big"${left<0?' style="color:var(--danger)"':''}>${fmt(left)}</div>` +
+      bar(pct, pct>100 ? 'var(--danger)' : pct>85 ? 'var(--warn)' : 'var(--ok)') +
+      `<div class="muted small" style="margin-top:6px">${fmt(spent)} spent of ${fmt(income)} income${isCur&&left>0&&daysLeft>0?` · ≈ ${fmt(Math.floor(left/daysLeft))} / day for ${daysLeft} day${daysLeft===1?'':'s'}`:''}</div>`;
+  } else {
+    h += `<div class="big">—</div><div class="muted small">Add your paycheck to see how much is left to spend.</div>`;
+  }
+  h += `</section>`;
+
+  // Income
+  h += `<section class="card"><h2>Income <span class="muted small">${fmt(income)}</span></h2>`;
+  if (incs.length) h += `<ul class="list">` + incs.map(i => `<li><button class="row" data-inc="${i.id}"><span class="ico" style="background:#1f9d4826">💰</span><span class="mid"><b>${esc(i.note||'Paycheck')}</b><small>${esc(fmtDate(i.ts))}</small></span><span class="amt pos">+${fmt(i.amt)}</span></button></li>`).join('') + `</ul>`;
+  h += `<button class="btn primary" data-act="add-inc" style="margin-top:${incs.length?'10px':'0'}">＋ Add paycheck</button>`;
+  if (!incs.length){
+    const prev = monthIncome(shiftYM(month,-1));
+    if (prev.length) h += `<button class="btn" data-act="copy-inc">Copy last month (${fmt(prev.reduce((a,i)=>a+i.amt,0))})</button>`;
+  }
+  h += `</section>`;
+
+  // Category budgets (deducted from income)
+  h += `<section class="card"><h2>Budgets</h2>
+    <p class="muted small" style="margin:0 0 6px">Monthly limit per category. Leave empty for none.${income ? ` Planned ${fmt(budgetSum)} of ${fmt(income)} · <b${income-budgetSum<0?' style="color:var(--danger)"':''}>${fmt(income-budgetSum)} ${income-budgetSum<0?'over-planned':'unplanned'}</b>` : budgetSum ? ` Planned ${fmt(budgetSum)}.` : ''}</p>`;
+  h += cats().map(c => {
+    const b = S.budgets[c] || 0, v = totals[c] || 0;
+    let sub = `<small class="muted">${fmt(v)} spent</small>`;
+    if (b){ const l = b - v; sub = `<small class="muted">${fmt(v)} spent · <span${l<0?' style="color:var(--danger)"':''}>${l>=0?fmt(l)+' left':fmt(-l)+' over'}</span></small>` + bar(v/b*100, v>b ? 'var(--danger)' : v/b>.85 ? 'var(--warn)' : meta(c).c); }
+    return `<div class="field">${icon(c)}<span class="name">${esc(c)}<br>${sub}</span><input class="money" inputmode="decimal" placeholder="—" data-budget="${esc(c)}" value="${b?fmtNum(b):''}" aria-label="${esc(c)} budget in euros"><span class="muted">€</span></div>`;
+  }).join('');
+  h += `</section>`;
   $('#main').innerHTML = h;
 }
 
@@ -491,12 +652,13 @@ function renderSettings(){
     <p class="muted small" style="margin:0 0 12px">Pick <b>spending.txt</b> from iCloud Drive › Shortcuts. You can re-import the same file anytime – lines already imported are skipped.</p>
     <button class="btn primary" data-act="import">⬇︎ Import spending.txt</button>
   </section>
-  <section class="card"><h2>Monthly budgets</h2>
-    <p class="muted small" style="margin:0 0 6px">Optional. Leave empty for no budget.</p>
-    ${CATS.map(c => `<div class="field">${icon(c)}<span class="name">${c}</span><input class="money" inputmode="decimal" placeholder="—" data-budget="${esc(c)}" value="${S.budgets[c]?fmtNum(S.budgets[c]):''}" aria-label="${c} budget in euros"><span class="muted">€</span></div>`).join('')}
+  <section class="card"><h2>Categories</h2>
+    <p class="muted small" style="margin:0 0 6px">Add your own categories. Monthly budgets are set in the <b>Budget</b> tab.</p>
+    ${S.cats.length ? `<div>${S.cats.map(c => `<div class="rule">${icon(c.name)}<span class="mid">${esc(c.name)}</span><button class="x" data-delcat="${esc(c.name)}" aria-label="Delete category">✕</button></div>`).join('')}</div>` : ''}
+    <form class="addcat" id="catForm" autocomplete="off"><input class="emo" id="cEmo" placeholder="🏷️" aria-label="Emoji"><input class="nm" id="cName" placeholder="New category" aria-label="Category name" autocapitalize="words"><button class="btn primary" type="submit">Add</button></form>
   </section>
   <section class="card"><h2>Remembered merchants</h2>
-    ${rules.length ? `<div>${rules.map(([k,c]) => `<div class="rule">${icon(CATS.includes(c)?c:'Other')}<span class="mid">${esc(k)}<br><small class="muted">${esc(c)}</small></span><button class="x" data-rule="${esc(k)}" aria-label="Forget">✕</button></div>`).join('')}</div>`
+    ${rules.length ? `<div>${rules.map(([k,c]) => `<div class="rule">${icon(isCat(c)?c:'Other')}<span class="mid">${esc(k)}<br><small class="muted">${esc(c)}</small></span><button class="x" data-rule="${esc(k)}" aria-label="Forget">✕</button></div>`).join('')}</div>`
       : `<p class="muted small" style="margin:0">When you change a transaction's category, the merchant is remembered here and future transactions from it get that category.</p>`}
   </section>
   <section class="card"><h2>Backup</h2>
@@ -509,10 +671,12 @@ function renderSettings(){
 
 function render(){
   renderHeader();
-  ({overview:renderOverview, tx:renderTx, review:renderReview, settings:renderSettings})[view]();
+  ({overview:renderOverview, tx:renderTx, budget:renderBudget, review:renderReview, settings:renderSettings})[view]();
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab===view));
-  const bd = $('#badge'); bd.textContent = S.review.length; bd.classList.toggle('hidden', !S.review.length);
-  $('#fab').classList.toggle('hidden', !(view==='overview'||view==='tx'));
+  const bd = $('#badge'), n = todoCount(); bd.textContent = n; bd.classList.toggle('hidden', !n);
+  $('#fab').classList.toggle('hidden', !(view==='overview'||view==='tx'||view==='budget'));
+  $('#fab').dataset.act = view==='budget' ? 'add-inc' : 'add';
+  $('#fab').setAttribute('aria-label', view==='budget' ? 'Add paycheck' : 'Add transaction');
 }
 function go(v){ view = v; render(); window.scrollTo(0,0); }
 
@@ -525,7 +689,7 @@ function openEditor({tx=null, review=null} = {}){
   const g = tx || (review && review.guess) || {};
   const isNew = !tx;
   const cat = tx ? tx.cat : (g.m ? guessCat(g.m) : 'Other');
-  ed = {txId: tx && tx.id, reviewId: review && review.id, cat, catTouched: !!tx, origCat: tx ? tx.cat : null};
+  ed = {txId: tx && tx.id, reviewId: review && review.id, cat, catTouched: !!tx, origCat: tx ? tx.cat : null, ask: tx && tx.ask};
   const merchants = [...new Set(S.tx.map(t => t.m).filter(Boolean))].sort().slice(0,300);
   const title = review ? 'Fix transaction' : isNew ? 'Add transaction' : 'Edit transaction';
   $('#sheet').innerHTML = `<div class="sheet-bg" data-act="close"></div>
@@ -536,7 +700,9 @@ function openEditor({tx=null, review=null} = {}){
     <label for="fMer">Merchant / description</label><input id="fMer" list="mlist" placeholder="e.g. Market stall" value="${esc(g.m||'')}" autocapitalize="words">
     <datalist id="mlist">${merchants.map(m=>`<option value="${esc(m)}">`).join('')}</datalist>
     <div class="lbl">Category</div>
-    <div class="catgrid">${CATS.map(c=>`<button type="button" class="cbtn ${c===cat?'on':''}" data-pick="${esc(c)}"><span>${META[c].e}</span>${c}</button>`).join('')}</div>
+    <div class="catgrid" id="catgrid">${catGrid(cat)}</div>
+    <div id="purposeBox" class="${cat==='Cash'?'':'hidden'}"><label for="fPurpose">Withdrawn for (optional)</label>
+      <select id="fPurpose"><option value="">—</option>${cats().filter(c=>c!=='Cash').map(c=>`<option value="${esc(c)}" ${tx&&tx.purpose===c?'selected':''}>${meta(c).e} ${esc(c)}</option>`).join('')}</select></div>
     <label for="fTs">Date & time</label><input id="fTs" type="datetime-local" value="${g.ts||nowTs()}">
     <label for="fNote">Note (optional)</label><input id="fNote" value="${esc((tx&&tx.note)||'')}">
     <div class="btns">${tx ? `<button type="button" class="btn danger" data-act="ed-del">Delete</button>` : `<button type="button" class="btn" data-act="close">Cancel</button>`}<button type="submit" class="btn primary">Save</button></div>
@@ -546,8 +712,23 @@ function openEditor({tx=null, review=null} = {}){
   document.body.style.overflow = 'hidden';
   if (isNew && !review) setTimeout(() => $('#fAmt').focus(), 50);
 }
+const catGrid = sel => cats().map(c=>`<button type="button" class="cbtn ${c===sel?'on':''}" data-pick="${esc(c)}"><span>${meta(c).e}</span>${esc(c)}</button>`).join('') +
+  `<button type="button" class="cbtn new" data-act="newcat"><span>＋</span>New</button>`;
 function closeEditor(){ $('#sheet').classList.remove('open'); $('#sheet').innerHTML=''; document.body.style.overflow=''; ed = null; }
-function pickCat(c){ ed.cat = c; document.querySelectorAll('.cbtn').forEach(b => b.classList.toggle('on', b.dataset.pick===c)); }
+function pickCat(c){
+  if (!ed) return;
+  ed.cat = c; document.querySelectorAll('.cbtn').forEach(b => b.classList.toggle('on', b.dataset.pick===c));
+  const pb = $('#purposeBox'); if (pb) pb.classList.toggle('hidden', c !== 'Cash');
+}
+function newCatFromEditor(){
+  const name = prompt('New category name (you can start it with an emoji, e.g. “🐶 Pets”)');
+  if (!name) return;
+  const m = name.trim().match(/^(\p{Extended_Pictographic}[\u{FE0F}\u{200D}\p{Extended_Pictographic}]*)\s*(.*)$/u);
+  const c = m ? addCat(m[2], m[1]) : addCat(name);
+  if (!c) return;
+  save();
+  if (ed && $('#catgrid')){ $('#catgrid').innerHTML = catGrid(c); ed.catTouched = true; pickCat(c); }
+}
 
 function saveEditor(){
   const amt = parseAmount($('#fAmt').value);
@@ -556,36 +737,92 @@ function saveEditor(){
   const ts = $('#fTs').value || nowTs();
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(ts)){ toast('Please pick a date'); return; }
   const note = $('#fNote').value.trim();
+  const purpose = ed.cat === 'Cash' && $('#fPurpose') ? $('#fPurpose').value : '';
   let tx;
   if (ed.txId){
     tx = S.tx.find(t => t.id === ed.txId);
     Object.assign(tx, {amt, m, ts:ts.slice(0,16), note, cat:ed.cat});
+    // Saving the editor answers the "what was it for?" question
+    if (tx.ask === 'revolut' || (tx.ask === 'cash' && (purpose || ed.cat !== 'Cash'))) delete tx.ask;
   } else {
     const r = ed.reviewId ? S.review.find(x => x.id === ed.reviewId) : null;
     tx = {id:uid(), k:r?r.k:null, ts:ts.slice(0,16), amt, m, place:(r&&r.guess&&r.guess.place)||'', type:(r&&r.guess&&r.guess.type)||'', src:r?(r.guess&&r.guess.src)||'review':'manual', note, cat:ed.cat};
     S.tx.push(tx);
     if (r) S.review = S.review.filter(x => x.id !== r.id);
   }
+  if (purpose) tx.purpose = purpose; else delete tx.purpose;
+  if (amt < 0 && tx.src !== 'manual') tx.refund = true; else if (amt > 0) delete tx.refund;
   // Remember merchant → category when the user deliberately chose a different category
   let msg = 'Saved';
   const key = merchantKey(m);
   const changedExisting = ed.txId && ed.origCat !== ed.cat;
   const fixedReview = ed.reviewId && ed.catTouched && guessCat(m) !== ed.cat;
-  if (key && m !== 'Cash' && (changedExisting || fixedReview)){
+  // Revolut transfers and cash withdrawals differ every time, so never remember them as a merchant rule
+  const oneOff = ed.ask || ed.cat === 'Cash' || IS_REVOLUT.test(norm(m)) || m === 'Cash withdrawal';
+  if (key && m !== 'Cash' && !oneOff && (changedExisting || fixedReview)){
     S.rules[key] = ed.cat;
     let n = 0;
     S.tx.forEach(t => { if (t !== tx && merchantKey(t.m) === key && t.cat !== ed.cat){ t.cat = ed.cat; n++; } });
-    msg = `${META[ed.cat].e} ${m} will always be ${ed.cat}` + (n ? ` (updated ${n} other)` : '');
+    msg = `${meta(ed.cat).e} ${m} will always be ${ed.cat}` + (n ? ` (updated ${n} other)` : '');
   }
   save(); closeEditor(); month = tx.ts.slice(0,7); render(); toast(msg);
 }
 
+/* ================= income (paychecks) ================= */
+let inc = null; // {id, reviewId}
+function openIncome({item=null, review=null} = {}){
+  const g = item || (review && review.guess) || {};
+  inc = {id: item && item.id, reviewId: review && review.id};
+  const defTs = g.ts || (month === curYM() ? nowTs() : month + '-01T08:00');
+  const note = item ? item.note : (review && g.m) ? g.m : 'Paycheck';
+  $('#sheet').innerHTML = `<div class="sheet-bg" data-act="close"></div>
+  <form class="sheet" id="incForm" autocomplete="off">
+    <div class="grab"></div><h2>${item ? 'Edit income' : 'Add paycheck'}</h2>
+    ${review ? `<div class="raw">${esc(review.raw)}</div>` : ''}
+    <label for="fAmt">Amount (€)</label><input id="fAmt" inputmode="decimal" placeholder="0,00" value="${g.amt!=null?fmtNum(Math.abs(g.amt)):''}">
+    <label for="iNote">Description</label><input id="iNote" value="${esc(note)}" placeholder="Paycheck">
+    <label for="iTs">Date (counts towards that month's budget)</label><input id="iTs" type="datetime-local" value="${defTs}">
+    <div class="btns">${item ? `<button type="button" class="btn danger" data-act="inc-del">Delete</button>` : `<button type="button" class="btn" data-act="close">Cancel</button>`}<button type="submit" class="btn primary">Save</button></div>
+    ${item ? `<button type="button" class="btn plain" data-act="close">Cancel</button>` : ''}
+  </form>`;
+  $('#sheet').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  if (!item && !review) setTimeout(() => $('#fAmt').focus(), 50);
+}
+function closeSheet(){ closeEditor(); inc = null; }
+function saveIncome(){
+  const amt = parseAmount($('#fAmt').value);
+  if (amt == null || amt === 0){ toast('Please enter an amount, e.g. 1.850,00'); $('#fAmt').focus(); return; }
+  const ts = ($('#iTs').value || nowTs()).slice(0,16);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(ts)){ toast('Please pick a date'); return; }
+  const note = $('#iNote').value.trim() || 'Paycheck';
+  if (inc.id){
+    Object.assign(S.income.find(i => i.id === inc.id), {amt:Math.abs(amt), ts, note});
+  } else {
+    const r = inc.reviewId ? S.review.find(x => x.id === inc.reviewId) : null;
+    S.income.push({id:uid(), k:r?r.k:null, amt:Math.abs(amt), ts, note});
+    if (r) S.review = S.review.filter(x => x.id !== r.id);
+  }
+  save(); closeSheet(); month = ts.slice(0,7); go('budget'); toast(`💰 ${note}: ${fmt(Math.abs(amt))}`);
+}
+function copyLastIncome(){
+  const prev = monthIncome(shiftYM(month,-1));
+  prev.forEach(i => {
+    let ts = month + i.ts.slice(7);
+    const [y,mo] = month.split('-').map(Number), last = new Date(y, mo, 0).getDate();
+    if (+ts.slice(8,10) > last) ts = `${month}-${pad(last)}${ts.slice(10)}`;
+    S.income.push({id:uid(), k:null, amt:i.amt, ts, note:i.note});
+  });
+  save(); render(); toast(`Copied ${prev.length} income entr${prev.length===1?'y':'ies'}`);
+}
+
 /* ================= CSV ================= */
-const CSV_COLS = ['id','date','time','amount','currency','merchant','place','category','type','source','note','key'];
+const CSV_COLS = ['id','date','time','amount','currency','merchant','place','category','type','source','note','key','purpose','ask'];
 function csvCell(v){ v = String(v ?? ''); return /[";\n\r]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; }
 function toCSV(){
-  const rows = S.tx.slice().sort((a,b)=>a.ts.localeCompare(b.ts)).map(t =>
-    [t.id, t.ts.slice(0,10), t.ts.slice(11,16), fmtNum(t.amt), 'EUR', t.m, t.place||'', t.cat, t.type||'', t.src, t.note||'', t.k||''].map(csvCell).join(';'));
+  const all = S.tx.concat(S.income.map(i => ({id:i.id, ts:i.ts, amt:i.amt, m:i.note, cat:'Income', type:'INCOME', src:'income', k:i.k})));
+  const rows = all.sort((a,b)=>a.ts.localeCompare(b.ts)).map(t =>
+    [t.id, t.ts.slice(0,10), t.ts.slice(11,16), fmtNum(t.amt), 'EUR', t.m, t.place||'', t.cat, t.type||'', t.src, t.note||'', t.k||'', t.purpose||'', t.ask||''].map(csvCell).join(';'));
   return '﻿' + CSV_COLS.join(';') + '\r\n' + rows.join('\r\n') + '\r\n';
 }
 function parseCSV(text){
@@ -609,7 +846,7 @@ function restoreCSV(text){
   const head = rows.shift().map(h => h.trim().toLowerCase());
   const ix = n => head.indexOf(n);
   if (ix('date') < 0 || ix('amount') < 0){ toast('Not a Spending backup CSV'); return; }
-  const ids = new Set(S.tx.map(t => t.id));
+  const ids = new Set(S.tx.concat(S.income).map(t => t.id));
   let added = 0;
   for (const r of rows){
     const get = n => ix(n) >= 0 ? (r[ix(n)] || '').trim() : '';
@@ -617,9 +854,19 @@ function restoreCSV(text){
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || amt == null) continue;
     const id = get('id') || uid();
     if (ids.has(id)) continue;
-    const cat = CATS.includes(get('category')) ? get('category') : guessCat(get('merchant'));
     const k = get('key') || null;
-    S.tx.push({id, k, ts: d + 'T' + (/^\d{2}:\d{2}$/.test(get('time')) ? get('time') : '00:00'), amt, m:get('merchant'), place:get('place'), cat, type:get('type'), src:get('source')||'manual', note:get('note')});
+    const ts = d + 'T' + (/^\d{2}:\d{2}$/.test(get('time')) ? get('time') : '00:00');
+    if (get('source') === 'income'){
+      S.income.push({id, k, ts, amt:Math.abs(amt), note:get('merchant') || 'Paycheck'});
+    } else {
+      let cat = get('category');
+      if (!isCat(cat)) cat = cat && cat !== 'Income' ? addCat(cat) || 'Other' : guessCat(get('merchant'));
+      const t = {id, k, ts, amt, m:get('merchant'), place:get('place'), cat, type:get('type'), src:get('source')||'manual', note:get('note')};
+      if (get('purpose')) t.purpose = get('purpose');
+      if (get('ask') === 'cash' || get('ask') === 'revolut') t.ask = get('ask');
+      if (amt < 0 && t.src !== 'manual') t.refund = true;
+      S.tx.push(t);
+    }
     if (k) S.seen[k] = 1;
     ids.add(id); added++;
   }
@@ -644,6 +891,14 @@ document.addEventListener('click', e => {
   if (d.tab){ go(d.tab); return; }
   if (d.edit){ const t = S.tx.find(x => x.id === d.edit); if (t) openEditor({tx:t}); return; }
   if (d.pick){ ed.catTouched = true; pickCat(d.pick); return; }
+  if (d.ans){ answerAsk(d.ans, d.cat, d.label); return; }
+  if (d.inc){ const i = S.income.find(x => x.id === d.inc); if (i) openIncome({item:i}); return; }
+  if (d.rinc){ const r = S.review.find(x => x.id === d.rinc); if (r) openIncome({review:r}); return; }
+  if (d.delcat){
+    const n = S.tx.filter(t => t.cat === d.delcat).length;
+    if (confirm(`Delete category “${d.delcat}”?` + (n ? ` ${n} transaction${n===1?'':'s'} will move to Other.` : ''))){ removeCat(d.delcat); if (filterCat === d.delcat) filterCat = null; save(); render(); toast('Category deleted'); }
+    return;
+  }
   if (d.chip !== undefined){ filterCat = d.chip || null; renderTx(); return; }
   if (d.catFilter){ filterCat = d.catFilter; query = ''; go('tx'); return; }
   if (d.rfix){ const r = S.review.find(x => x.id === d.rfix); if (r) openEditor({review:r}); return; }
@@ -653,7 +908,13 @@ document.addEventListener('click', e => {
     case 'prev': month = shiftYM(month,-1); render(); break;
     case 'next': month = shiftYM(month, 1); render(); break;
     case 'add': openEditor(); break;
-    case 'close': closeEditor(); break;
+    case 'close': closeSheet(); break;
+    case 'newcat': newCatFromEditor(); break;
+    case 'add-inc': openIncome(); break;
+    case 'copy-inc': copyLastIncome(); break;
+    case 'inc-del':
+      if (confirm('Delete this income?')){ S.income = S.income.filter(i => i.id !== inc.id); save(); closeSheet(); render(); toast('Deleted'); }
+      break;
     case 'import': $('#fileTxt').value=''; $('#fileTxt').click(); break;
     case 'restore': $('#fileCsv').value=''; $('#fileCsv').click(); break;
     case 'export': shareFile(`spending-backup-${nowTs().slice(0,10)}.csv`, toCSV(), 'text/csv'); break;
@@ -670,7 +931,15 @@ document.addEventListener('click', e => {
       break;
   }
 });
-document.addEventListener('submit', e => { e.preventDefault(); if (e.target.id === 'edForm') saveEditor(); });
+document.addEventListener('submit', e => {
+  e.preventDefault();
+  if (e.target.id === 'edForm') saveEditor();
+  else if (e.target.id === 'incForm') saveIncome();
+  else if (e.target.id === 'catForm'){
+    const c = addCat($('#cName').value, $('#cEmo').value);
+    if (c){ save(); render(); toast(`${meta(c).e} ${c} added`); }
+  }
+});
 document.addEventListener('input', e => {
   if (e.target.id === 'q'){ query = e.target.value; renderTxList(); }
   if (e.target.id === 'fMer' && ed && !ed.catTouched) pickCat(guessCat(e.target.value));
@@ -681,6 +950,7 @@ document.addEventListener('change', e => {
     const v = parseAmount(e.target.value);
     if (v && v > 0){ S.budgets[c] = v; e.target.value = fmtNum(v); } else { delete S.budgets[c]; e.target.value = ''; }
     save(); toast(v && v > 0 ? `${c} budget: ${fmt(v)}` : `${c} budget removed`);
+    if (view === 'budget'){ const y = window.scrollY; render(); window.scrollTo(0, y); }
   }
 });
 $('#fileTxt').addEventListener('change', async e => {
@@ -691,7 +961,7 @@ $('#fileCsv').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   try { restoreCSV(await f.text()); } catch(err){ alert('Could not read the file: ' + err.message); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && ed) closeEditor(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#sheet').classList.contains('open')) closeSheet(); });
 
 /* Offline support when served over http(s) next to sw.js */
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
