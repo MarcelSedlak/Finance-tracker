@@ -419,7 +419,8 @@ function classifyBank(tx, n, nt){
 
 /* → {ok:true, tx} | {ok:false, reason, guess} | {ignore, ts} (nothing to import: title, balance, Revolut top-up)
    raw = the line with its original spacing (mStik separates merchant and city with several spaces)
-   now = timestamp for notifications that carry no date (they get approx:true) */
+   now = timestamp for notifications that carry no date (they get approx:true = time is an estimate,
+         undated:true = a dated copy of the line may still fix it) */
 function parseLine(line, {raw = line, now = nowTs()} = {}){
   let m = line.match(BANK_RE);
   if (m){
@@ -445,7 +446,7 @@ function parseNotification(raw, now){
   const {ts, rest} = findDate(raw);
   const body = rest.replace(/[;|\t]/g, '  ').replace(/^[^\p{L}\d-]+/u, '').trim();
   const flat = body.replace(/\s+/g,' '), n = norm(flat);
-  const when = ts ? {ts} : {ts:now, approx:true};
+  const when = ts ? {ts} : {ts:now, approx:true, undated:true};
 
   // Revolut
   let m = flat.match(REV_PAID);
@@ -512,12 +513,32 @@ function refundCat(tx){
   return orig ? catOf(orig) : guessCat(tx.m);
 }
 
+/* Date written on a line, if any (SMS, Apple Pay, or a date the Shortcut put in front of a notification) */
+function lineDate(line){
+  let m = line.match(BANK_RE); if (m) return euToTs(m[2]);
+  m = line.match(AP_RE); if (m) return euToTs(m[3]);
+  return findDate(line).ts;
+}
+/* An undated notification imported earlier, now seen again with its date (e.g. added by hand to the file) */
+function undatedMatch(tx){
+  if (tx.undated || (tx.src !== 'mstik' && tx.src !== 'revolut')) return null;
+  const k = merchantKey(tx.m), t0 = minutes(tx.ts);
+  return S.tx.filter(t => t.undated && t.src === tx.src && t.amt === tx.amt && merchantKey(t.m) === k)
+    .sort((a,b) => Math.abs(minutes(a.ts)-t0) - Math.abs(minutes(b.ts)-t0))[0] || null;
+}
+
 async function importText(text, {quiet=false} = {}){
   const lines = text.split(/\r\n|\n|\r/);
   const occ = {}, now = nowTs();
-  let added = 0, review = 0, skipped = 0, asks = 0, refunds = 0, ignored = 0, latest = null;
+  let added = 0, review = 0, skipped = 0, asks = 0, refunds = 0, ignored = 0, dated = 0, latest = null;
   let ctxTs = null;                               // a date on its own line applies to the next notification
+  // The file is in time order: an undated line happened between the dated lines around it
+  const dates = lines.map(l => lineDate(l.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim()));
+  const after = []; for (let i = lines.length - 1, nx = null; i >= 0; i--){ if (dates[i]) nx = dates[i]; after[i] = nx; }
+  let before = null, i = -1;
   for (const raw of lines){
+    i++;
+    if (dates[i]) before = dates[i];
     const rawLine = raw.replace(/ /g,' ').trim();
     const line = rawLine.replace(/\s+/g,' ');
     if (!line) continue;
@@ -532,9 +553,17 @@ async function importText(text, {quiet=false} = {}){
       continue;
     }
     const g = r.ok ? r.tx : r.guess;
-    if (g && g.approx && ctxTs){ g.ts = ctxTs; delete g.approx; }
+    if (g && g.approx){
+      if (ctxTs){ g.ts = ctxTs; delete g.approx; delete g.undated; }
+      else {
+        if (after[i] && g.ts > after[i]) g.ts = after[i];
+        if (before && g.ts < before) g.ts = before;
+      }
+    }
     ctxTs = null;
     if (r.ok){
+      const old = undatedMatch(r.tx);
+      if (old){ old.ts = r.tx.ts; delete old.approx; delete old.undated; dated++; continue; }
       const twin = findTwin(r.tx);
       if (twin){
         S.review.push({id:uid(), k, raw:sanitize(line), reason:`Possible duplicate of ${twin.m} ${fmt(twin.amt)} on ${fmtDate(twin.ts)} (${SRC_NAME[twin.src]||twin.src})`, guess:r.tx});
@@ -559,13 +588,15 @@ async function importText(text, {quiet=false} = {}){
   if (refunds) parts.push(`${refunds} refund${refunds===1?'':'s'}`);
   if (asks) parts.push(`${asks} need a category`);
   if (review) parts.push(`${review} need review`);
+  if (dated) parts.push(`${dated} date${dated===1?'':'s'} corrected`);
   if (ignored) parts.push(`${ignored} Revolut top-up${ignored===1?'':'s'} skipped`);
   if (skipped) parts.push(`${skipped} already imported`);
+  if (dated && !added && !review){ toast(`🗓️ ${dated} date${dated===1?'':'s'} corrected`); return; }
   if (!added && !review){ if (!quiet) toast(skipped || ignored ? 'Up to date – nothing new' : 'No lines found in the file'); return; }
   toast((quiet ? 'Refreshed: ' : 'Import done: ') + parts.join(' · '));
 }
 
-/* Fetch spending.txt from the saved link (on start-up and with the ↻ button) */
+/* Fetch finance.txt from the saved link (on start-up and with the ↻ button) */
 let fetching = false;
 async function refreshFile({quiet=false} = {}){
   if (!S.fileUrl){ if (!quiet){ $('#fileTxt').value=''; $('#fileTxt').click(); } return; }
@@ -575,7 +606,12 @@ async function refreshFile({quiet=false} = {}){
     let url = S.fileUrl.trim();
     url = url.replace(/^https:\/\/www\.dropbox\.com\//i, 'https://dl.dropboxusercontent.com/');
     url += (url.includes('?') ? '&' : '?') + '_=' + Date.now(); // never use a cached copy
-    const r = await fetch(url, {cache:'no-store'});
+    let r = await fetch(url, {cache:'no-store'});
+    // The file was renamed from spending.txt to finance.txt: follow a saved link to the old name
+    if (r.status === 404 && /spending\.txt/i.test(url)){
+      const r2 = await fetch(url.replace(/spending\.txt/ig, 'finance.txt'), {cache:'no-store'}).catch(() => null);
+      if (r2 && r2.ok){ r = r2; S.fileUrl = S.fileUrl.replace(/spending\.txt/ig, 'finance.txt'); save(); }
+    }
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const text = await r.text();
     if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('the link returned a web page, not the text file');
@@ -627,7 +663,8 @@ function monthTx(ym){ return S.tx.filter(t => t.ts.startsWith(ym)).concat(recurT
 function catTotals(list){ const o = {}; cats().forEach(c => o[c]=0); list.forEach(t => { o[catOf(t)] += t.amt; }); return o; }
 const monthIncome = ym => S.income.filter(i => i.ts.startsWith(ym)).sort((a,b) => b.ts.localeCompare(a.ts));
 const askList = () => S.tx.filter(t => t.ask).sort((a,b) => b.ts.localeCompare(a.ts));
-const todoCount = () => S.review.length + askList().length;
+const approxList = () => S.tx.filter(t => t.approx).sort((a,b) => b.ts.localeCompare(a.ts));
+const todoCount = () => S.review.length + askList().length + approxList().length;
 
 /* ================= rendering ================= */
 const icon = cat => `<span class="ico" style="background:${meta(cat).c}26">${meta(cat).e}</span>`;
@@ -662,7 +699,7 @@ function renderHeader(){
   const titles = {overview:'Spending', tx:'Transactions', budget:'Budget', review:'Needs review', settings:'Settings'};
   const showMonth = view==='overview' || view==='tx' || view==='budget';
   const latestData = S.tx.concat(S.income).reduce((a,t) => t.ts.slice(0,7) > a ? t.ts.slice(0,7) : a, curYM());
-  const rb = `<button class="refresh${fetching?' spin':''}" data-act="refresh" aria-label="${S.fileUrl?'Refresh from file':'Import spending.txt'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>`;
+  const rb = `<button class="refresh${fetching?' spin':''}" data-act="refresh" aria-label="${S.fileUrl?'Refresh from file':'Import finance.txt'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>`;
   const sb = `<button class="refresh" data-act="scan" aria-label="Scan UPN QR code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 16h3"/></svg></button>`;
   $('#hdr').innerHTML = `<div class="hrow"><h1>${titles[view]}</h1><div class="hacts">${sb}${rb}</div></div>` + (showMonth ?
     `<div class="month"><button class="mbtn" data-act="prev" aria-label="Previous month">‹</button><b>${ymLabel(month)}</b><button class="mbtn" data-act="next" aria-label="Next month" ${month>=latestData?'disabled':''}>›</button></div>` : '');
@@ -689,7 +726,7 @@ function renderOverview(){
   if (todo) h += `<button class="banner" data-tab="review">⚠️<span>${todo} item${todo===1?'':'s'} need${todo===1?'s':''} your input</span>›</button>`;
   const inc = monthIncome(month).reduce((a,i)=>a+i.amt,0);
   if (inc) h += `<button class="banner ok" data-tab="budget">💰<span>${fmt(inc-total)} left of ${fmt(inc)} income</span>›</button>`;
-  h += S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh from file</button>` : `<button class="btn primary" data-act="import">⬇︎ Import spending.txt</button>`;
+  h += S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh from file</button>` : `<button class="btn primary" data-act="import">⬇︎ Import finance.txt</button>`;
 
   // Category breakdown
   h += `<section class="card"><h2>By category</h2>`;
@@ -773,10 +810,18 @@ function renderReview(){
     h += asks.map(t => `<div class="card"><div class="askhead">${icon(catOf(t))}<span class="mid"><b>${t.ask==='cash'?'Cash withdrawal':'Sent to Revolut'} · ${fmt(t.amt)}</b><small class="muted">${esc(fmtDate(t.ts))}${t.place?' · '+esc(t.place):''}</small></span></div>
       <div class="muted small" style="margin-top:8px">${t.ask==='cash'?'Withdrawn for:':'Spent on:'}</div><div class="qbtns">${askButtons(t)}</div></div>`).join('');
   }
-  if (S.review.length || !asks.length)
-    h += `<p class="muted small" style="margin:${asks.length?'18px':'4px'} 4px 0">Lines from your file that weren't recognized as purchases. Tap <b>Fix</b> to turn one into a transaction, <b>Income</b> to add it as a paycheck, or <b>Delete</b> to ignore it. Deleted lines won't come back on the next import.</p>`;
+  const ap = approxList();
+  if (ap.length){
+    h += `<p class="muted small" style="margin:${asks.length?'18px':'4px'} 4px 0"><b>Check the date.</b> These notifications had no date, so it was estimated from when they were imported. Set the right date and time, or keep the estimate.</p>`;
+    h += ap.map(t => `<div class="card"><div class="askhead">${icon(catOf(t))}<span class="mid"><b>${esc(t.m||'—')} · ${t.amt<0?'+'+fmt(-t.amt):fmt(t.amt)}</b><small class="muted">${esc(catOf(t))} · ${SRC_NAME[t.src]||''}${t.place?' · '+esc(t.place):''}</small></span></div>
+      <div class="addcat"><input class="nm" type="datetime-local" data-apts="${t.id}" value="${t.ts}" aria-label="Date and time"><button class="btn" data-apok="${t.id}">Keep</button></div></div>`).join('');
+    if (ap.length > 1) h += `<button class="btn" data-act="apokall">Keep all ${ap.length} estimates</button>`;
+  }
+  const any = asks.length || ap.length;
+  if (S.review.length || !any)
+    h += `<p class="muted small" style="margin:${any?'18px':'4px'} 4px 0">Lines from your file that weren't recognized as purchases. Tap <b>Fix</b> to turn one into a transaction, <b>Income</b> to add it as a paycheck, or <b>Delete</b> to ignore it. Deleted lines won't come back on the next import.</p>`;
   if (!S.review.length){
-    if (!asks.length) h += `<div class="card empty"><div class="e">✅</div>Nothing to review.</div>`;
+    if (!any) h += `<div class="card empty"><div class="e">✅</div>Nothing to review.</div>`;
   } else {
     h += S.review.map(r => `<div class="card"><div class="reason">${esc(r.reason)}</div><div class="raw">${esc(r.raw)}</div>
       <div class="btns"><button class="btn danger" data-rdel="${r.id}">Delete</button><button class="btn" data-rinc="${r.id}">Income</button><button class="btn primary" data-rfix="${r.id}">Fix</button></div></div>`).join('');
@@ -877,12 +922,12 @@ function renderSettings(){
   const rules = Object.entries(S.rules).sort((a,b)=>a[0].localeCompare(b[0]));
   $('#main').innerHTML = `
   <section class="card"><h2>Import</h2>
-    <p class="muted small" style="margin:0 0 10px"><b>Auto-refresh:</b> paste a direct link to your <b>spending.txt</b>. It's fetched every time the app opens and when you tap ↻. Only new lines are added.</p>
-    <input class="urlin" id="fileUrl" type="url" inputmode="url" placeholder="https://…/spending.txt" value="${esc(S.fileUrl||'')}" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <p class="muted small" style="margin:0 0 12px">Safari can't read iCloud Drive by itself, so the link must download the plain file and allow other sites to fetch it (e.g. a Dropbox share link, or spending.txt hosted next to this app). Without a link, ↻ opens the file picker.</p>
+    <p class="muted small" style="margin:0 0 10px"><b>Auto-refresh:</b> paste a direct link to your <b>finance.txt</b>. It's fetched every time the app opens and when you tap ↻. Only new lines are added.</p>
+    <input class="urlin" id="fileUrl" type="url" inputmode="url" placeholder="https://…/finance.txt" value="${esc(S.fileUrl||'')}" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <p class="muted small" style="margin:0 0 12px">Safari can't read iCloud Drive by itself, so the link must download the plain file and allow other sites to fetch it (e.g. a Dropbox share link, or finance.txt hosted next to this app). Without a link, ↻ opens the file picker.</p>
     <p class="muted small" style="margin:0 0 12px"><b>Understood lines:</b> Banka Sparkasse SMS, Apple Pay, <b>mStik</b> and <b>Revolut</b> notifications. mStik payments to Revolut are skipped – the Revolut notification has the real purchase. Notifications have no date, so let the Shortcut add one (e.g. <code>05.11.2026 14:03</code>) in front of the text; without it the time of import is used.</p>
     ${S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh now</button>` : ''}
-    <button class="btn${S.fileUrl?'':' primary'}" data-act="import">⬇︎ Pick spending.txt manually</button>
+    <button class="btn${S.fileUrl?'':' primary'}" data-act="import">⬇︎ Pick finance.txt manually</button>
   </section>
   <section class="card"><h2>Categories</h2>
     <p class="muted small" style="margin:0 0 6px">Add your own categories. Monthly budgets are set in the <b>Budget</b> tab.</p>
@@ -1333,6 +1378,7 @@ document.addEventListener('click', e => {
   if (d.catFilter){ filterCat = d.catFilter; query = ''; go('tx'); return; }
   if (d.rfix){ const r = S.review.find(x => x.id === d.rfix); if (r) openEditor({review:r}); return; }
   if (d.rdel){ S.review = S.review.filter(x => x.id !== d.rdel); save(); render(); toast('Deleted'); return; }
+  if (d.apok){ const t = S.tx.find(x => x.id === d.apok); if (t){ delete t.approx; save(); render(); toast('Kept the estimated date'); } return; }
   if (d.rule){ delete S.rules[d.rule]; save(); render(); toast('Merchant forgotten'); return; }
   switch (d.act){
     case 'prev': month = shiftYM(month,-1); render(); break;
@@ -1359,6 +1405,7 @@ document.addEventListener('click', e => {
     case 'ed-del':
       if (confirm('Delete this transaction?')){ S.tx = S.tx.filter(t => t.id !== ed.txId); save(); closeEditor(); render(); toast('Deleted'); }
       break;
+    case 'apokall': S.tx.forEach(t => { delete t.approx; }); save(); render(); toast('Kept all estimated dates'); break;
     case 'rdelall':
       if (confirm(`Delete all ${S.review.length} lines in review?`)){ S.review = []; save(); render(); }
       break;
@@ -1389,6 +1436,11 @@ document.addEventListener('change', e => {
     if (u && !/^https?:\/\//i.test(u)){ toast('The link must start with https://'); return; }
     S.fileUrl = u; save(); render();
     if (u) refreshFile(); else toast('Auto-refresh turned off');
+    return;
+  }
+  if (e.target.dataset && e.target.dataset.apts){
+    const t = S.tx.find(x => x.id === e.target.dataset.apts), v = e.target.value.slice(0,16);
+    if (t && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)){ t.ts = v; delete t.approx; save(); render(); toast(`🗓️ ${t.m}: ${fmtDate(v)}`); }
     return;
   }
   if (e.target.dataset && e.target.dataset.savings){
@@ -1423,7 +1475,7 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
 }
 
 render();
-refreshFile({quiet:true}); // pull the latest spending.txt on every start
+refreshFile({quiet:true}); // pull the latest finance.txt on every start
 /* A Home Screen app is often resumed instead of reloaded: refresh then too */
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
