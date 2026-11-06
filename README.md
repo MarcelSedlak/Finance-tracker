@@ -8,7 +8,8 @@ A tiny personal spending tracker for iPhone (Safari / Home Screen). Everything i
   - **mStik**: `Plačilo 10,00 EUR s kartico 5305…7168 na prodajnem mestu MERCATOR   Ljubljana   SI.` (cash withdrawals, refunds and incoming money follow the same rules as the SMS)
   - **Revolut**: `🛍 Paid 9,40 € (10,49 US$) at Amazon`; the balance line and titles are skipped, refunds lower spending, foreign-currency-only payments go to review
   - mStik payments **to Revolut are skipped** (only moving money); the Revolut notification records the real purchase
-  - Notifications carry no date: put one in front (e.g. `05.11.2026 14:03 Plačilo …`, or a date on its own line before it). Without it the import time is used and shown as `~14:03`
+  - Notifications carry no date: put one in front (e.g. `05.11.2026 14:03 Plačilo …`, or a date on its own line before it). Without it the date is estimated (import time, kept between the dated SMS / Apple Pay lines around it), shown as `~14:03` and listed under **Check the date** in Needs review, where you can set it or keep the estimate
+  - Old undated lines can also be dated by hand in `spending.txt`: the dated copy corrects the existing transaction's date instead of adding it again
   - The same payment seen twice (SMS / mStik / Apple Pay, or Revolut / Apple Pay) goes to Needs review as a likely duplicate
 - **Scan UPN QR** (header button or "Scan UPN QR instead" when adding): point the camera at a Slovenian payment slip, or pick a photo, and the payment is added right away with recipient, amount and purpose (category guessed, Bills by default). Scanning the same slip twice asks first. Uses the bundled `jsQR.min.js`
 - **STORNO** lines are refunds: the money back lowers spending in the original purchase's category
