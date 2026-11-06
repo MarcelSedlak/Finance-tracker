@@ -1,6 +1,6 @@
 // Caches the app so it opens without a connection. Your data lives in localStorage, not here.
-const CACHE = 'spending-v3';
-const FILES = ['./', './index.html', './manifest.webmanifest', './apple-touch-icon.png', './icon-512.png'];
+const CACHE = 'spending-v4';
+const FILES = ['./', './index.html', './manifest.webmanifest', './apple-touch-icon.png', './icon-512.png', './jsQR.min.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(FILES.map(f => c.add(f).catch(() => {})))));

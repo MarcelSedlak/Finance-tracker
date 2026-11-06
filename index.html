@@ -36,6 +36,7 @@ body{
   padding:env(safe-area-inset-top) 0 calc(84px + env(safe-area-inset-bottom));
   min-height:100vh; overscroll-behavior-y:none;
 }
+body.has-fab{padding-bottom:calc(156px + env(safe-area-inset-bottom))}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none;padding:0}
 .wrap{max-width:560px;margin:0 auto;padding:0 16px}
@@ -43,6 +44,7 @@ button{cursor:pointer;border:0;background:none;padding:0}
 /* header */
 header{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 8px}
 .hrow{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px}
+.hacts{display:flex;align-items:center;gap:2px;margin-right:-10px}
 .refresh{width:44px;height:44px;border-radius:22px;color:var(--accent);display:flex;align-items:center;justify-content:center}
 .refresh svg{width:24px;height:24px}
 .refresh.spin svg{animation:spin .9s linear infinite}
@@ -111,7 +113,8 @@ h1{font-size:28px;font-weight:700;margin:0;letter-spacing:-.02em}
 .list li:first-child .row{border-top:0}
 .row .mid{flex:1;min-width:0}
 .row .mid b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.row .mid small{display:block;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .mid small{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;color:var(--muted);font-size:13px;overflow:hidden;line-height:1.35}
+.row.future{opacity:.6}
 .row .amt{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .day{display:flex;justify-content:space-between;font-size:14px;font-weight:600;color:var(--muted);margin:18px 4px 6px;text-transform:uppercase;letter-spacing:.02em}
 .empty{text-align:center;padding:28px 8px;color:var(--muted)}
@@ -153,7 +156,13 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;justify-
 #sheet.open{display:block}
 .sheet-bg{position:absolute;inset:0;background:rgba(0,0,0,.4)}
 .sheet{position:absolute;left:0;right:0;bottom:0;max-width:560px;margin:0 auto;background:var(--card);border-radius:20px 20px 0 0;
-  padding:8px 16px calc(16px + env(safe-area-inset-bottom));max-height:94vh;max-height:94dvh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  padding:8px 16px calc(16px + env(safe-area-inset-bottom));max-height:94vh;max-height:94dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.cam{position:relative;width:100%;aspect-ratio:1;max-height:56vh;border-radius:16px;overflow:hidden;background:#000;margin:0 auto}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cam .frame{position:absolute;inset:16%;border:3px solid rgba(255,255,255,.9);border-radius:18px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+.cam .camoff{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#fff;padding:24px;font-size:15px}
+#scanMsg{margin:12px 4px;min-height:40px}
+#scanMsg.err{color:var(--danger)}
 .grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 10px}
 .sheet h2{margin:0 0 12px;font-size:20px}
 .sheet label,.lbl{display:block;font-size:14px;font-weight:600;color:var(--muted);margin:12px 0 6px}
@@ -170,6 +179,11 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;justify-
 #toast{position:fixed;left:16px;right:16px;bottom:calc(150px + env(safe-area-inset-bottom));z-index:30;max-width:520px;margin:0 auto;background:#2c2c2e;color:#fff;padding:14px 16px;border-radius:14px;font-size:15px;
   box-shadow:0 6px 20px rgba(0,0,0,.3);opacity:0;transform:translateY(10px);transition:.2s;pointer-events:none}
 #toast.show{opacity:1;transform:none}
+#sheet.open ~ #toast{top:calc(12px + env(safe-area-inset-top));bottom:auto;transform:translateY(-10px)}
+#sheet.open ~ #toast.show{transform:none}
+#toast.act{display:flex;align-items:center;gap:12px;pointer-events:auto}
+#toast.act span{flex:1}
+#toast button{color:#6cb4ff;font-weight:600;min-height:36px;padding:0 4px}
 .hidden{display:none!important}
 </style>
 </head>
@@ -193,6 +207,7 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;justify-
 <div id="toast"></div>
 <input type="file" id="fileTxt" accept=".txt,text/plain" class="hidden">
 <input type="file" id="fileCsv" accept=".csv,text/csv,text/plain" class="hidden">
+<input type="file" id="filePhoto" accept="image/*" class="hidden">
 
 <script>
 'use strict';
@@ -258,7 +273,8 @@ function parseAmount(s){
   let t = String(s ?? '').replace(/EUR|€|\s| /gi,'');
   t = t.replace(/[−–]/g, '-');
   if (!t) return null;
-  if (t.includes(',')) t = t.replace(/\./g,'').replace(',', '.');
+  if (t.includes(',') && t.includes('.') && t.lastIndexOf('.') > t.lastIndexOf(',')) t = t.replace(/,/g,''); // 1,234.56
+  else if (t.includes(',')) t = t.replace(/\./g,'').replace(',', '.');                                       // 1.234,56
   else if (!/\.\d{1,2}$/.test(t)) t = t.replace(/\./g,'');
   if (!/^-?\d+(\.\d+)?$/.test(t)) return null;
   return Math.round(parseFloat(t) * 100);
@@ -288,7 +304,8 @@ function dayLabel(day){
 const fmtDate = ts => tsDate(ts).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) + ' ' + ts.slice(11,16);
 /* Remove masked card numbers (and the bank phone) from any text we keep */
 const sanitize = s => String(s)
-  .replace(/(kartica\s*)?[*xX•]{2,}\s*\d{2,}/gi, '[card]')
+  .replace(/\b\d{4,6}[*xX•]{3,}\d{2,4}\b/g, '[card]')
+  .replace(/(^|[\s,:;])(kartica\s*)?[*xX•]{2,}\s*\d{2,}/gi, '$1[card]')
   .replace(/\b\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b/g, '[card]')
   .replace(/,?\s*info\s*\+?\d[\d ]{6,}\s*$/i, '');
 
@@ -346,8 +363,64 @@ function guessCat(merchant){
 /* ================= parsing ================= */
 const BANK_RE = /^(-?[\d.,]+)\s*EUR,\s*(\d{1,2}\.\d{1,2}\.\d{4} \d{1,2}:\d{2}),\s*[^,]+,\s*([^,]+),\s*([^,]+),?\s*([^,]*)/i;
 const AP_RE = /^APPLE\s*PAY\s*;\s*([^;]+?)\s*;\s*([^;]+?)\s*;\s*([^;]+?)\s*;?\s*$/i;
+/* Push notifications copied by the Shortcut (title and text, on one line or on separate lines):
+   mStik:   "Plačilo 10,00 EUR s kartico 530535******7168 na prodajnem mestu MERCATOR   Ljubljana   SI."
+   Revolut: "🛍 Paid 9,40 € (10,49 US$) at Amazon" (+ "⚠️ EUR Balance: 9,42 €" on the next line) */
+const MSTIK_RE = /^(\p{L}[\p{L} ]*?)\s+(-?\d[\d.,]*)\s*EUR\b\.?\s*(.*)$/u;
+const MSTIK_AT = /(?:na\s+prodajnem\s+mestu|prodajno\s+mesto|na\s+bankomatu|bankomat|pri\s+trgovcu)\s*:?\s+(.+)$/iu;
+const REV_PAID = /\bPaid\s+(.+?)\s+at\s+(.+)$/i;
+const REV_REFUND = /\bRefund(?:ed)?\b(.*)$/i;
+const REV_IN = /\b(?:Received|sent you|Payment received)\b/i;
+const REV_INTERNAL = /\b(?:TOP ?UP|TOPPED UP|MONEY ADDED|EXCHANGED|YOU EXCHANGED)\b/;
+const EUR_AMT = /(-?\d[\d.,]*)\s*(?:€|EUR\b)|€\s*(-?\d[\d.,]*)/i;
+const BALANCE = /\b(?:BALANCE|STANJE|RAZPOLOZLJIV\w*)\b/;
+const SRC_NAME = {bank:'bank SMS', applepay:'Apple Pay', mstik:'mStik', revolut:'Revolut', upn:'UPN QR'};
 
-function parseLine(line){
+/* Find a date (+ time) anywhere in a notification line, as the Shortcut may add one.
+   Accepts 05.11.2026 14:03, 2026-11-05 14:03, 5 Nov 2026 at 14:03, 5. nov. 2026 ob 14:03, Nov 5, 2026 at 2:03 PM */
+const MONTHS = {jan:1,feb:2,mar:3,apr:4,maj:5,may:5,jun:6,jul:7,avg:8,aug:8,sep:9,okt:10,oct:10,nov:11,dec:12};
+const TIME = String.raw`(?:[,\s]*(?:ob|at|o|um)?\s*(\d{1,2})[:.](\d{2})(?::\d{2})?\s*(am|pm|AM|PM)?)?`;
+const DATE_RES = [
+  [new RegExp(String.raw`\b(\d{4})-(\d{2})-(\d{2})(?:[T ,]+(\d{1,2}):(\d{2})(?::\d{2})?)?`), m => [m[1], m[2], m[3], m[4], m[5]]],
+  [new RegExp(String.raw`\b(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})` + TIME), m => [m[3], m[2], m[1], m[4], m[5], m[6]]],
+  [new RegExp(String.raw`\b(\d{1,2})\.?\s+(jan|feb|mar|apr|maj|may|jun|jul|avg|aug|sep|okt|oct|nov|dec)\p{L}*\.?,?\s+(\d{4})` + TIME, 'iu'), m => [m[3], MONTHS[m[2].toLowerCase()], m[1], m[4], m[5], m[6]]],
+  [new RegExp(String.raw`\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\p{L}*\.?\s+(\d{1,2}),?\s+(\d{4})` + TIME, 'iu'), m => [m[3], MONTHS[m[1].toLowerCase()], m[2], m[4], m[5], m[6]]],
+];
+function findDate(s){
+  for (const [re, pick] of DATE_RES){
+    const m = s.match(re); if (!m) continue;
+    let [y, mo, d, h, mi, ap] = pick(m); y=+y; mo=+mo; d=+d; h=+(h||0); mi=+(mi||0);
+    if (ap){ ap = ap.toLowerCase(); if (ap==='pm' && h<12) h += 12; if (ap==='am' && h===12) h = 0; }
+    if (mo<1||mo>12||d<1||d>31||h>23||mi>59) continue;
+    return {ts:`${y}-${pad(mo)}-${pad(d)}T${pad(h)}:${pad(mi)}`, rest:(s.slice(0, m.index) + ' ' + s.slice(m.index + m[0].length)).trim()};
+  }
+  return {ts:null, rest:s};
+}
+const eurIn = s => { const m = String(s).match(EUR_AMT); return m ? parseAmount(m[1] || m[2]) : null; };
+/* "Amazon ⚠️ EUR Balance: 9,42 €" → "Amazon" */
+const cutMerchant = s => String(s).split(/\s*(?:\p{Extended_Pictographic}|\b(?:[A-Z]{3}\s+)?Balance\b)/u)[0].replace(/[\s.]+$/,'').trim();
+
+/* Bank operations (SMS and mStik) share the same rules */
+function classifyBank(tx, n, nt){
+  // STORNO = money returned to the account → refund that lowers spending
+  if (IS_STORNO.test(n)){ tx.amt = -Math.abs(tx.amt); tx.refund = true; return {ok:true, tx}; }
+  // DVIG = cash withdrawal → own category, ask what it was for
+  if (IS_DVIG.test(n)){ tx.amt = Math.abs(tx.amt); tx.cat = 'Cash'; tx.ask = 'cash'; tx.place = [tx.m, tx.place].filter(Boolean).join(', '); tx.m = 'Cash withdrawal'; return {ok:true, tx}; }
+  if (IS_REVOLUT.test(n) && !INCOMING.test(nt)){
+    // mStik: topping up Revolut is just moving money – the Revolut notification has the real purchase
+    if (tx.src === 'mstik') return {ignore:'revolut'};
+    // SMS: money sent to Revolut → ask what it was spent on
+    tx.amt = Math.abs(tx.amt); tx.ask = 'revolut'; tx.cat = 'Other'; return {ok:true, tx};
+  }
+  if (INCOMING.test(nt)) return {ok:false, reason:`Incoming money (${tx.type}) – paycheck? Tap Income to add it to your budget.`, guess:tx, incoming:true};
+  if (NOT_SPENDING.test(nt)) return {ok:false, reason:`Not a purchase (${tx.type}) – transfer or other bank operation?`, guess:tx};
+  return {ok:true, tx};
+}
+
+/* → {ok:true, tx} | {ok:false, reason, guess} | {ignore, ts} (nothing to import: title, balance, Revolut top-up)
+   raw = the line with its original spacing (mStik separates merchant and city with several spaces)
+   now = timestamp for notifications that carry no date (they get approx:true) */
+function parseLine(line, {raw = line, now = nowTs()} = {}){
   let m = line.match(BANK_RE);
   if (m){
     const amt = parseAmount(m[1]), ts = euToTs(m[2]);
@@ -355,16 +428,7 @@ function parseLine(line){
     const place = (m[5]||'').replace(/\s*Banka Sparkasse.*$/i,'').trim();
     const tx = {ts, amt, m: merchant, place, type, src:'bank'};
     if (amt == null || !ts) return {ok:false, reason:'Could not read amount or date', guess:tx};
-    const n = norm(line), nt = norm(type);
-    // STORNO = money returned to the account → refund that lowers spending
-    if (IS_STORNO.test(n)){ tx.amt = -Math.abs(amt); tx.refund = true; return {ok:true, tx}; }
-    // DVIG = cash withdrawal → own category, ask what it was for
-    if (IS_DVIG.test(n)){ tx.amt = Math.abs(amt); tx.cat = 'Cash'; tx.ask = 'cash'; tx.place = [merchant, place].filter(Boolean).join(', '); tx.m = 'Cash withdrawal'; return {ok:true, tx}; }
-    // Money sent to Revolut → ask what it was spent on
-    if (IS_REVOLUT.test(n) && !INCOMING.test(nt)){ tx.amt = Math.abs(amt); tx.ask = 'revolut'; tx.cat = 'Other'; return {ok:true, tx}; }
-    if (INCOMING.test(nt)) return {ok:false, reason:`Incoming money (${type}) – paycheck? Tap Income to add it to your budget.`, guess:tx, incoming:true};
-    if (NOT_SPENDING.test(nt)) return {ok:false, reason:`Not a purchase (${type}) – transfer or other bank operation?`, guess:tx};
-    return {ok:true, tx};
+    return classifyBank(tx, norm(line), norm(type));
   }
   m = line.match(AP_RE);
   if (m){
@@ -374,16 +438,72 @@ function parseLine(line){
     if (IS_REVOLUT.test(norm(tx.m))){ tx.ask = 'revolut'; tx.cat = 'Other'; }
     return {ok:true, tx};
   }
-  // Unknown format: make a best-effort guess so fixing is quick
-  const am = line.match(/(-?\d{1,3}(?:\.\d{3})*,\d{2}|-?\d+,\d{2})\s*(?:EUR|€)?/i);
-  return {ok:false, reason:'Unrecognized message format', guess:{amt: am ? parseAmount(am[1]) : null, ts: euToTs(line), m:'', place:'', type:'', src:'review'}};
+  return parseNotification(raw, now);
 }
+
+function parseNotification(raw, now){
+  const {ts, rest} = findDate(raw);
+  const body = rest.replace(/[;|\t]/g, '  ').replace(/^[^\p{L}\d-]+/u, '').trim();
+  const flat = body.replace(/\s+/g,' '), n = norm(flat);
+  const when = ts ? {ts} : {ts:now, approx:true};
+
+  // Revolut
+  let m = flat.match(REV_PAID);
+  if (m){
+    const merchant = cutMerchant(m[2]);
+    const paren = (m[1].match(/\(([^)]*)\)/) || [])[1] || '';
+    const main = m[1].replace(/\([^)]*\)/, '').trim();
+    let amt = eurIn(main), fx = paren;
+    if (amt == null && eurIn(paren) != null){ amt = eurIn(paren); fx = main; }
+    const tx = Object.assign({amt, m:merchant, place:fx, type:'REVOLUT', src:'revolut'}, when);
+    if (amt == null) return {ok:false, reason:'Revolut payment in a foreign currency – tap Fix and enter the amount in euros', guess:tx};
+    tx.amt = Math.abs(amt);
+    return {ok:true, tx};
+  }
+  if ((m = flat.match(REV_REFUND)) && eurIn(m[1]) != null){
+    const from = (m[1].match(/\bfrom\s+(.+)$/i) || [])[1];
+    return {ok:true, tx:Object.assign({amt:-Math.abs(eurIn(m[1])), m:from ? cutMerchant(from) : 'Revolut refund', place:'', type:'REVOLUT REFUND', src:'revolut', refund:true}, when)};
+  }
+  if (REV_IN.test(flat) && eurIn(flat) != null)
+    return {ok:false, reason:'Money received on Revolut – paycheck? Tap Income to add it to your budget.', guess:Object.assign({amt:Math.abs(eurIn(flat)), m:'', place:'', type:'REVOLUT', src:'revolut'}, when), incoming:true};
+  if (REV_INTERNAL.test(n)) return {ignore:'revolut'};
+
+  // mStik (Banka Sparkasse app)
+  m = body.match(MSTIK_RE);
+  if (m && !BALANCE.test(norm(m[1]))){
+    let words = m[1].trim().split(/\s+/);
+    const half = words.length / 2;               // title + text on one line: "Plačilo Plačilo 10,00 EUR …"
+    if (Number.isInteger(half) && words.slice(0, half).join(' ').toLowerCase() === words.slice(half).join(' ').toLowerCase()) words = words.slice(0, half);
+    const type = words.join(' ');
+    const tail = m[3].split(/\s*(?:\bRazpolo\p{L}*|\bStanje\b|\bBalance\b)/iu)[0];
+    const at = tail.match(MSTIK_AT);
+    let merchant = '', place = '';
+    if (at){
+      const parts = at[1].replace(/[\s.]+$/,'').split(/\s{2,}/).map(p => p.trim()).filter(Boolean);
+      merchant = (parts.shift() || '').replace(/\*+\d*\**$/, '').trim();
+      place = parts.filter(p => p.length > 1).join(', ');
+    }
+    const tx = Object.assign({amt:parseAmount(m[2]), m:merchant || type, place, type, src:'mstik'}, when);
+    if (tx.amt == null) return {ok:false, reason:'Could not read the amount', guess:tx};
+    return classifyBank(tx, n, norm(type));
+  }
+
+  // Lines without a payment: Revolut balance, notification titles ("Plačilo", "Amazon"), a date on its own line
+  if (BALANCE.test(n) || !/\d/.test(body) || (flat.length <= 40 && !/\d[.,]\d{2}\b|€|\bEUR\b/i.test(flat))) return {ignore:'info', ts};
+  // Unknown format: make a best-effort guess so fixing is quick
+  const am = flat.match(/(-?\d{1,3}(?:\.\d{3})*,\d{2}|-?\d+,\d{2})\s*(?:EUR|€)?/i);
+  return {ok:false, reason:'Unrecognized message format', guess:Object.assign({amt: am ? parseAmount(am[1]) : null, m:'', place:'', type:'', src:'review'}, ts ? {ts} : {ts:now})};
+}
+
 const minutes = ts => Math.round(tsDate(ts).getTime()/60000);
-/* A bank SMS and an Apple Pay line for the same payment = likely duplicate */
+/* The same payment reported twice (bank SMS / mStik / Apple Pay, Revolut / Apple Pay),
+   or a bank transfer for a slip that was already scanned as a UPN QR = likely duplicate */
+const TWINS = {bank:['applepay','mstik','upn'], mstik:['applepay','bank','upn'], applepay:['bank','mstik','revolut'], revolut:['applepay']};
 function findTwin(tx){
-  if (tx.src !== 'bank' && tx.src !== 'applepay') return null;
+  const pair = TWINS[tx.src]; if (!pair) return null;
   const t0 = minutes(tx.ts);
-  return S.tx.find(t => (t.src==='bank'||t.src==='applepay') && t.src !== tx.src && t.amt === tx.amt && Math.abs(minutes(t.ts)-t0) <= 15) || null;
+  return S.tx.find(t => pair.includes(t.src) && t.amt === tx.amt &&
+    Math.abs(minutes(t.ts)-t0) <= (t.src === 'upn' ? 7*1440 : (t.approx || tx.approx) ? 2*1440 : 15)) || null;
 }
 /* Category for a refund: same as the original purchase from that merchant, if we can find it */
 function refundCat(tx){
@@ -394,20 +514,30 @@ function refundCat(tx){
 
 async function importText(text, {quiet=false} = {}){
   const lines = text.split(/\r\n|\n|\r/);
-  const occ = {};
-  let added = 0, review = 0, skipped = 0, asks = 0, refunds = 0, latest = null;
+  const occ = {}, now = nowTs();
+  let added = 0, review = 0, skipped = 0, asks = 0, refunds = 0, ignored = 0, latest = null;
+  let ctxTs = null;                               // a date on its own line applies to the next notification
   for (const raw of lines){
-    const line = raw.replace(/ /g,' ').replace(/\s+/g,' ').trim();
+    const rawLine = raw.replace(/ /g,' ').trim();
+    const line = rawLine.replace(/\s+/g,' ');
     if (!line) continue;
     occ[line] = (occ[line]||0) + 1;               // identical lines are counted, so a real 2nd identical payment isn't lost
     const k = hash(line) + '.' + occ[line];
-    if (S.seen[k]){ skipped++; continue; }
+    if (S.seen[k]){ skipped++; ctxTs = null; continue; }
     S.seen[k] = 1;
-    const r = parseLine(line);
+    const r = parseLine(line, {raw:rawLine, now});
+    if (r.ignore){
+      if (r.ignore === 'revolut') ignored++;
+      if (r.ts) ctxTs = r.ts;
+      continue;
+    }
+    const g = r.ok ? r.tx : r.guess;
+    if (g && g.approx && ctxTs){ g.ts = ctxTs; delete g.approx; }
+    ctxTs = null;
     if (r.ok){
       const twin = findTwin(r.tx);
       if (twin){
-        S.review.push({id:uid(), k, raw:sanitize(line), reason:`Possible duplicate of ${twin.m} ${fmt(twin.amt)} on ${fmtDate(twin.ts)} (${twin.src==='bank'?'bank SMS':'Apple Pay'})`, guess:r.tx});
+        S.review.push({id:uid(), k, raw:sanitize(line), reason:`Possible duplicate of ${twin.m} ${fmt(twin.amt)} on ${fmtDate(twin.ts)} (${SRC_NAME[twin.src]||twin.src})`, guess:r.tx});
         review++;
       } else {
         const cat = r.tx.cat || (r.tx.refund ? refundCat(r.tx) : guessCat(r.tx.m));
@@ -429,8 +559,9 @@ async function importText(text, {quiet=false} = {}){
   if (refunds) parts.push(`${refunds} refund${refunds===1?'':'s'}`);
   if (asks) parts.push(`${asks} need a category`);
   if (review) parts.push(`${review} need review`);
+  if (ignored) parts.push(`${ignored} Revolut top-up${ignored===1?'':'s'} skipped`);
   if (skipped) parts.push(`${skipped} already imported`);
-  if (!added && !review){ if (!quiet) toast(skipped ? 'Up to date – nothing new' : 'No lines found in the file'); return; }
+  if (!added && !review){ if (!quiet) toast(skipped || ignored ? 'Up to date – nothing new' : 'No lines found in the file'); return; }
   toast((quiet ? 'Refreshed: ' : 'Import done: ') + parts.join(' · '));
 }
 
@@ -456,13 +587,17 @@ async function refreshFile({quiet=false} = {}){
   }
 }
 
-/* Lines imported before refunds / cash / Revolut were recognized are sitting in review: convert them */
+/* Lines that sit in review because they weren't recognized back then (refunds, cash, Revolut,
+   mStik / Revolut notifications): convert them now. A review item's id starts with the time it was imported. */
+const idTs = id => { const t = parseInt(String(id).slice(0,-6), 36); if (!t) return nowTs(); const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 function migrateReview(){
   let n = 0;
   S.review = S.review.filter(r => {
-    if (!/STORNO|DVIG|REVOLUT/i.test(deacc(r.raw))) return true;
-    const p = parseLine(r.raw);
-    if (!p.ok || !(p.tx.refund || p.tx.ask)) return true;
+    const unknown = r.reason === 'Unrecognized message format';
+    if (!unknown && !/STORNO|DVIG|REVOLUT/i.test(deacc(r.raw))) return true;
+    const p = parseLine(r.raw, {now:idTs(r.id)});
+    if (p.ignore && unknown){ n++; return false; }
+    if (!p.ok || !(unknown || p.tx.refund || p.tx.ask)) return true;
     const cat = p.tx.cat || (p.tx.refund ? refundCat(p.tx) : guessCat(p.tx.m));
     S.tx.push(Object.assign({id:uid(), k:r.k, note:''}, p.tx, {cat})); n++;
     return false;
@@ -498,13 +633,19 @@ const todoCount = () => S.review.length + askList().length;
 const icon = cat => `<span class="ico" style="background:${meta(cat).c}26">${meta(cat).e}</span>`;
 function txRow(t){
   const cat = catOf(t);
-  const bits = [cat, t.ts.slice(11,16)];
+  const future = t.ts > nowTs();
+  const bits = [cat];
+  if (!t.recur) bits.push((t.approx ? '~' : '') + t.ts.slice(11,16));
   if (t.refund) bits.push('Refund');
   if (t.purpose) bits.push('for ' + t.purpose);
   if (t.ask) bits.push('❓ what was it for?');
-  if (t.src==='manual') bits.push('manual'); else if (t.src==='applepay') bits.push('Apple Pay'); else if (t.src==='recurring') bits.push('🔁 recurring');
-  if (t.note) bits.push(t.note); else if (t.place) bits.push(t.place);
-  return `<li><button class="row" ${t.recur ? `data-recur="${t.recur}"` : `data-edit="${t.id}"`}>${icon(cat)}<span class="mid"><b>${esc(t.m||'—')}</b><small>${esc(bits.join(' · '))}</small></span><span class="amt${t.amt<0?' pos':''}">${t.amt<0?'+'+fmt(-t.amt):fmt(t.amt)}</span></button></li>`;
+  if (t.recur) bits.push(`🔁 ${future ? 'upcoming' : 'recurring'} · ${t.note}`);
+  else {
+    const src = {manual:'manual', applepay:'Apple Pay', mstik:'mStik', revolut:'Revolut', upn:'UPN'}[t.src];
+    if (src) bits.push(src);
+    if (t.note) bits.push(t.note); else if (t.place) bits.push(t.place);
+  }
+  return `<li><button class="row${future?' future':''}" ${t.recur ? `data-recur="${t.recur}"` : `data-edit="${t.id}"`}>${icon(cat)}<span class="mid"><b>${esc(t.m||'—')}</b><small>${esc(bits.join(' · '))}</small></span><span class="amt${t.amt<0?' pos':''}">${t.amt<0?'+'+fmt(-t.amt):fmt(t.amt)}</span></button></li>`;
 }
 function groupedList(list){
   if (!list.length) return '';
@@ -522,7 +663,8 @@ function renderHeader(){
   const showMonth = view==='overview' || view==='tx' || view==='budget';
   const latestData = S.tx.concat(S.income).reduce((a,t) => t.ts.slice(0,7) > a ? t.ts.slice(0,7) : a, curYM());
   const rb = `<button class="refresh${fetching?' spin':''}" data-act="refresh" aria-label="${S.fileUrl?'Refresh from file':'Import spending.txt'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>`;
-  $('#hdr').innerHTML = `<div class="hrow"><h1>${titles[view]}</h1>${rb}</div>` + (showMonth ?
+  const sb = `<button class="refresh" data-act="scan" aria-label="Scan UPN QR code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 16h3"/></svg></button>`;
+  $('#hdr').innerHTML = `<div class="hrow"><h1>${titles[view]}</h1><div class="hacts">${sb}${rb}</div></div>` + (showMonth ?
     `<div class="month"><button class="mbtn" data-act="prev" aria-label="Previous month">‹</button><b>${ymLabel(month)}</b><button class="mbtn" data-act="next" aria-label="Next month" ${month>=latestData?'disabled':''}>›</button></div>` : '');
 }
 
@@ -597,7 +739,7 @@ function renderTx(){
 }
 function renderTxList(){
   const q = norm(query);
-  const list = monthTx(month).filter(t => (!filterCat || t.cat===filterCat) && (!q || norm(`${t.m} ${t.note||''} ${t.place||''}`).includes(q)));
+  const list = monthTx(month).filter(t => (!filterCat || catOf(t)===filterCat) && (!q || norm(`${t.m} ${t.note||''} ${t.place||''}`).includes(q)));
   const sum = list.reduce((a,t)=>a+t.amt,0);
   $('#txlist').innerHTML = list.length
     ? `<div class="muted small" style="margin:8px 4px 0">${list.length} transaction${list.length===1?'':'s'} · ${fmt(sum)}</div>` + groupedList(list)
@@ -652,7 +794,9 @@ function renderBudget(){
   const goal = S.savingsGoal || 0;
   const left = income - goal - spent;   // what you can still spend after putting the savings aside
   const saved = income - spent;         // what's actually left over = saved
-  const budgetSum = cats().reduce((a,c)=>a+(S.budgets[c]||0),0);
+  // A category without its own budget still has its recurring payments planned
+  const recCat = {}; recurTx(month).forEach(t => { const c = catOf(t); recCat[c] = (recCat[c]||0) + t.amt; });
+  const budgetSum = cats().reduce((a,c)=>a+(S.budgets[c]||recCat[c]||0),0);
   const planned = budgetSum + goal;
   const mName = ymLabel(month).split(' ')[0];
   const isCur = month === curYM();
@@ -709,14 +853,15 @@ function renderBudget(){
     <p class="muted small" style="margin:0 0 6px">Deducted automatically every month – no need for them to be in the file.</p>`;
   if (recs.length) h += `<ul class="list">` + recs.map(r => {
     const end = recurEnd(r), now = curYM();
-    const status = ymDiff(now, r.start) > 0 ? `starts ${ymShort(r.start)}` : end ? (end < now ? `ended ${ymShort(end)}` : `${ymDiff(now, end)+1}/${r.months} left · to ${ymShort(end)}`) : 'every month';
+    const left = end ? ymDiff(now, end) + 1 : 0;
+    const status = ymDiff(now, r.start) > 0 ? `starts ${ymShort(r.start)}` : end ? (end < now ? `ended ${ymShort(end)}` : `${left} of ${r.months} left · until ${ymShort(end)}`) : 'every month';
     return `<li><button class="row" data-recur="${r.id}">${icon(isCat(r.cat)?r.cat:'Bills')}<span class="mid"><b>${esc(r.name)}</b><small>${esc((r.cat||'Bills') + ' · day ' + (r.day||1) + ' · ' + status)}</small></span><span class="amt">${fmt(r.amt)}</span></button></li>`;
   }).join('') + `</ul>`;
   h += `<button class="btn" data-act="add-rec" style="margin-top:${recs.length?'10px':'0'}">＋ Add recurring payment</button></section>`;
 
   // Category budgets (deducted from income)
   h += `<section class="card"><h2>Budgets</h2>
-    <p class="muted small" style="margin:0 0 6px">Monthly savings goal and limit per category. Leave empty for none.${income ? ` Planned ${fmt(planned)} of ${fmt(income)} · <b${income-planned<0?' style="color:var(--danger)"':''}>${fmt(income-planned)} ${income-planned<0?'over-planned':'unplanned'}</b>` : planned ? ` Planned ${fmt(planned)}.` : ''}</p>
+    <p class="muted small" style="margin:0 0 6px">Monthly savings goal and limit per category. Leave empty for none.${Object.keys(recCat).length ? ' Recurring payments count as planned.' : ''}${income ? ` Planned ${fmt(planned)} of ${fmt(income)} · <b${income-planned<0?' style="color:var(--danger)"':''}>${fmt(income-planned)} ${income-planned<0?'over-planned':'unplanned'}</b>` : planned ? ` Planned ${fmt(planned)}.` : ''}</p>
     <div class="field"><span class="ico" style="background:#1f9d4826">🐷</span><span class="name">Savings<br><small class="muted">${income ? `${fmt(saved)} saved${goal?` of ${fmt(goal)}`:''}` : 'set aside from income'}</small></span><input class="money" inputmode="decimal" placeholder="—" data-savings="1" value="${goal?fmtNum(goal):''}" aria-label="Monthly savings goal in euros"><span class="muted">€</span></div>`;
   h += cats().map(c => {
     const b = S.budgets[c] || 0, v = totals[c] || 0;
@@ -735,6 +880,7 @@ function renderSettings(){
     <p class="muted small" style="margin:0 0 10px"><b>Auto-refresh:</b> paste a direct link to your <b>spending.txt</b>. It's fetched every time the app opens and when you tap ↻. Only new lines are added.</p>
     <input class="urlin" id="fileUrl" type="url" inputmode="url" placeholder="https://…/spending.txt" value="${esc(S.fileUrl||'')}" autocomplete="off" autocapitalize="off" spellcheck="false">
     <p class="muted small" style="margin:0 0 12px">Safari can't read iCloud Drive by itself, so the link must download the plain file and allow other sites to fetch it (e.g. a Dropbox share link, or spending.txt hosted next to this app). Without a link, ↻ opens the file picker.</p>
+    <p class="muted small" style="margin:0 0 12px"><b>Understood lines:</b> Banka Sparkasse SMS, Apple Pay, <b>mStik</b> and <b>Revolut</b> notifications. mStik payments to Revolut are skipped – the Revolut notification has the real purchase. Notifications have no date, so let the Shortcut add one (e.g. <code>05.11.2026 14:03</code>) in front of the text; without it the time of import is used.</p>
     ${S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh now</button>` : ''}
     <button class="btn${S.fileUrl?'':' primary'}" data-act="import">⬇︎ Pick spending.txt manually</button>
   </section>
@@ -760,28 +906,39 @@ function render(){
   ({overview:renderOverview, tx:renderTx, budget:renderBudget, review:renderReview, settings:renderSettings})[view]();
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab===view));
   const bd = $('#badge'), n = todoCount(); bd.textContent = n; bd.classList.toggle('hidden', !n);
-  $('#fab').classList.toggle('hidden', !(view==='overview'||view==='tx'||view==='budget'));
+  const fab = view==='overview'||view==='tx'||view==='budget';
+  $('#fab').classList.toggle('hidden', !fab);
+  document.body.classList.toggle('has-fab', fab);
   $('#fab').dataset.act = view==='budget' ? 'add-inc' : 'add';
   $('#fab').setAttribute('aria-label', view==='budget' ? 'Add paycheck' : 'Add transaction');
 }
 function go(v){ view = v; render(); window.scrollTo(0,0); }
 
 let toastTimer;
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'), 3200); }
+let toastFn = null;
+function toast(msg, action){
+  const t = $('#toast');
+  toastFn = action ? action.fn : null;
+  t.innerHTML = action ? `<span>${esc(msg)}</span><button data-act="toast">${esc(action.label)}</button>` : esc(msg);
+  t.classList.toggle('act', !!action);
+  t.classList.add('show'); clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.classList.remove('show', 'act'); toastFn = null; }, action ? 6000 : 3200);
+}
 
 /* ================= editor sheet ================= */
 let ed = null; // {txId, reviewId, cat, catTouched, origCat}
-function openEditor({tx=null, review=null} = {}){
-  const g = tx || (review && review.guess) || {};
+function openEditor({tx=null, review=null, prefill=null} = {}){
+  const g = tx || (review && review.guess) || prefill || {};
   const isNew = !tx;
-  const cat = tx ? tx.cat : (g.m ? guessCat(g.m) : 'Other');
-  ed = {txId: tx && tx.id, reviewId: review && review.id, cat, catTouched: !!tx, origCat: tx ? tx.cat : null, ask: tx && tx.ask};
+  const cat = tx ? tx.cat : g.cat || (g.m ? guessCat(g.m) : 'Other');
+  ed = {txId: tx && tx.id, reviewId: review && review.id, cat, catTouched: !!tx || !!g.cat, origCat: tx ? tx.cat : null, ask: tx && tx.ask, prefill};
   const merchants = [...new Set(S.tx.map(t => t.m).filter(Boolean))].sort().slice(0,300);
   const title = review ? 'Fix transaction' : isNew ? 'Add transaction' : 'Edit transaction';
   $('#sheet').innerHTML = `<div class="sheet-bg" data-act="close"></div>
   <form class="sheet" id="edForm" autocomplete="off">
     <div class="grab"></div><h2>${title}</h2>
     ${review ? `<div class="raw">${esc(review.raw)}</div>` : ''}
+    ${isNew && !review && !prefill ? `<button type="button" class="btn" data-act="scan">▦ Scan UPN QR instead</button>` : ''}
     <label for="fAmt">Amount (€)</label><input id="fAmt" inputmode="decimal" placeholder="0,00" value="${g.amt!=null?fmtNum(g.amt):''}">
     <label for="fMer">Merchant / description</label><input id="fMer" list="mlist" placeholder="e.g. Market stall" value="${esc(g.m||'')}" autocapitalize="words">
     <datalist id="mlist">${merchants.map(m=>`<option value="${esc(m)}">`).join('')}</datalist>
@@ -790,13 +947,13 @@ function openEditor({tx=null, review=null} = {}){
     <div id="purposeBox" class="${cat==='Cash'?'':'hidden'}"><label for="fPurpose">Withdrawn for (optional)</label>
       <select id="fPurpose"><option value="">—</option>${cats().filter(c=>c!=='Cash').map(c=>`<option value="${esc(c)}" ${tx&&tx.purpose===c?'selected':''}>${meta(c).e} ${esc(c)}</option>`).join('')}</select></div>
     <label for="fTs">Date & time</label><input id="fTs" type="datetime-local" value="${g.ts||nowTs()}">
-    <label for="fNote">Note (optional)</label><input id="fNote" value="${esc((tx&&tx.note)||'')}">
+    <label for="fNote">Note (optional)</label><input id="fNote" value="${esc(g.note||'')}">
     <div class="btns">${tx ? `<button type="button" class="btn danger" data-act="ed-del">Delete</button>` : `<button type="button" class="btn" data-act="close">Cancel</button>`}<button type="submit" class="btn primary">Save</button></div>
     ${tx ? `<button type="button" class="btn plain" data-act="close">Cancel</button>` : ''}
   </form>`;
   $('#sheet').classList.add('open');
   document.body.style.overflow = 'hidden';
-  if (isNew && !review) setTimeout(() => $('#fAmt').focus(), 50);
+  if (isNew && !review && g.amt == null) setTimeout(() => $('#fAmt').focus(), 50);
 }
 const catGrid = sel => cats().map(c=>`<button type="button" class="cbtn ${c===sel?'on':''}" data-pick="${esc(c)}"><span>${meta(c).e}</span>${esc(c)}</button>`).join('') +
   `<button type="button" class="cbtn new" data-act="newcat"><span>＋</span>New</button>`;
@@ -827,12 +984,14 @@ function saveEditor(){
   let tx;
   if (ed.txId){
     tx = S.tx.find(t => t.id === ed.txId);
+    if (tx.ts !== ts.slice(0,16)) delete tx.approx;   // the user set the real time
     Object.assign(tx, {amt, m, ts:ts.slice(0,16), note, cat:ed.cat});
     // Saving the editor answers the "what was it for?" question
     if (tx.ask === 'revolut' || (tx.ask === 'cash' && (purpose || ed.cat !== 'Cash'))) delete tx.ask;
   } else {
     const r = ed.reviewId ? S.review.find(x => x.id === ed.reviewId) : null;
-    tx = {id:uid(), k:r?r.k:null, ts:ts.slice(0,16), amt, m, place:(r&&r.guess&&r.guess.place)||'', type:(r&&r.guess&&r.guess.type)||'', src:r?(r.guess&&r.guess.src)||'review':'manual', note, cat:ed.cat};
+    const g = (r && r.guess) || ed.prefill || {};
+    tx = {id:uid(), k:r?r.k:(g.k||null), ts:ts.slice(0,16), amt, m, place:g.place||'', type:g.type||'', src:r?g.src||'review':g.src||'manual', note, cat:ed.cat};
     S.tx.push(tx);
     if (r) S.review = S.review.filter(x => x.id !== r.id);
   }
@@ -875,7 +1034,7 @@ function openIncome({item=null, review=null} = {}){
   document.body.style.overflow = 'hidden';
   if (!item && !review) setTimeout(() => $('#fAmt').focus(), 50);
 }
-function closeSheet(){ closeEditor(); inc = null; rec = null; }
+function closeSheet(){ stopScan(); closeEditor(); inc = null; rec = null; }
 function saveIncome(){
   const amt = parseAmount($('#fAmt').value);
   if (amt == null || amt === 0){ toast('Please enter an amount, e.g. 1.850,00'); $('#fAmt').focus(); return; }
@@ -936,6 +1095,150 @@ function saveRecurring(){
   else S.recurring.push(Object.assign({id:uid()}, data));
   save(); closeSheet(); render();
   toast(`🔁 ${name}: ${fmt(amt)} / month` + (months ? ` for ${months} month${months===1?'':'s'}` : ''));
+}
+
+/* ================= UPN QR scanner ================= */
+/* UPN QR (Slovenian payment slip): one field per line, ISO-8859-2.
+   0 UPNQR · 8 amount in cents (11 digits) · 11 purpose code · 12 purpose · 13 due date
+   14 recipient IBAN · 15 reference · 16 recipient name · 17 street · 18 city */
+function parseUPN(text){
+  const L = String(text || '').replace(/\r/g,'').split('\n').map(x => x.trim());
+  if (L[0] !== 'UPNQR' || L.length < 19) return null;
+  const amt = /^\d{1,11}$/.test(L[8]) ? parseInt(L[8], 10) : null;
+  return {amt, code:L[11], purpose:L[12], due:L[13], iban:L[14].replace(/\s+/g,''), ref:L[15], name:L[16], city:L[18]};
+}
+/* Category for a slip: remembered/keyword match on the recipient, then on the purpose, otherwise Bills */
+function upnCat(u){
+  const a = guessCat(u.name); if (a !== 'Other') return a;
+  const b = guessCat(u.purpose); return b !== 'Other' ? b : isCat('Bills') ? 'Bills' : 'Other';
+}
+const titleCase = s => /[a-zčšž]/.test(s) ? s : s.toLowerCase().replace(/(^|[\s.\-/(])(\p{L})/gu, (_, a, b) => a + b.toUpperCase());
+
+function addUPN(text){
+  const u = parseUPN(text); if (!u) return false;
+  const k = 'upn.' + hash(text.replace(/\s+/g,' '));
+  const dup = S.tx.find(t => t.k === k);
+  closeSheet();
+  if (dup && !confirm(`This payment slip was already added (${dup.m}, ${fmt(dup.amt)}, ${fmtDate(dup.ts)}). Add it again?`)) return true;
+  const name = titleCase(u.name || 'UPN payment');
+  const base = {m:name, place:titleCase(u.city || ''), note:u.purpose || '', cat:upnCat(u), type:'UPN', src:'upn', k:dup ? null : k};
+  if (!u.amt){ openEditor({prefill:base}); toast('No amount on this slip – please enter it'); return true; }
+  const tx = Object.assign({id:uid(), ts:nowTs(), amt:u.amt}, base);
+  S.tx.push(tx); save();
+  month = tx.ts.slice(0,7); render();
+  toast(`${meta(tx.cat).e} Added ${tx.m} · ${fmt(tx.amt)}`, {label:'Edit', fn:() => { const t = S.tx.find(x => x.id === tx.id); if (t) openEditor({tx:t}); }});
+  return true;
+}
+
+/* Bytes → text. UPN QR codes are ISO-8859-2 (č = 0xE8), other QR codes usually UTF-8 */
+function qrText(bytes){
+  const u8 = Uint8Array.from(bytes);
+  try { return new TextDecoder('utf-8', {fatal:true}).decode(u8); } catch(e){}
+  try { return new TextDecoder('iso-8859-2').decode(u8); } catch(e){ return String.fromCharCode(...u8); }
+}
+/* BarcodeDetector hands back a string; if it read the ISO-8859-2 bytes as Latin-1, re-decode them */
+function fixLatin2(s){
+  if (!/[\u0080-ÿ]/.test(s) || /[^\u0000-ÿ]/.test(s)) return s;
+  try { return new TextDecoder('iso-8859-2').decode(Uint8Array.from(s, c => c.charCodeAt(0))); } catch(e){ return s; }
+}
+let jsQRp = null;
+function loadJsQR(){
+  if (window.jsQR) return Promise.resolve(window.jsQR);
+  return jsQRp = jsQRp || new Promise((ok, fail) => {
+    const sc = document.createElement('script'); sc.src = 'jsQR.min.js';
+    sc.onload = () => window.jsQR ? ok(window.jsQR) : fail(new Error('QR reader missing'));
+    sc.onerror = () => { jsQRp = null; fail(new Error('Could not load the QR reader (offline?)')); };
+    document.head.appendChild(sc);
+  });
+}
+let detector;
+async function getDetector(){
+  if (detector !== undefined) return detector;
+  detector = null;
+  try { if ('BarcodeDetector' in window && (await BarcodeDetector.getSupportedFormats()).includes('qr_code')) detector = new BarcodeDetector({formats:['qr_code']}); } catch(e){}
+  return detector;
+}
+/* Read a QR code from a video frame, image or canvas → text or null */
+const qrCanvas = document.createElement('canvas');
+async function decodeQR(src, w, h, maxSide = 900){
+  const det = await getDetector();
+  if (det){
+    try { const r = await det.detect(src); if (r.length) return fixLatin2(r[0].rawValue); } catch(e){}
+    if (src instanceof HTMLVideoElement) return null;      // next frame
+  }
+  const jsQR = await loadJsQR();
+  for (const side of [maxSide, 500, 1400]){
+    const sc = Math.min(1, side / Math.max(w, h));
+    const cw = Math.round(w * sc), ch = Math.round(h * sc);
+    qrCanvas.width = cw; qrCanvas.height = ch;
+    const cx = qrCanvas.getContext('2d', {willReadFrequently:true});
+    cx.drawImage(src, 0, 0, cw, ch);
+    const r = jsQR(cx.getImageData(0, 0, cw, ch).data, cw, ch, {inversionAttempts: src instanceof HTMLVideoElement ? 'dontInvert' : 'attemptBoth'});
+    if (r) return qrText(r.binaryData);
+    if (src instanceof HTMLVideoElement) return null;      // one size per frame keeps the camera smooth
+  }
+  return null;
+}
+
+let scan = null; // {stream, timer, last}
+function scanMsg(text, err){ const m = $('#scanMsg'); if (m){ m.textContent = text; m.classList.toggle('err', !!err); } }
+function onQR(text){
+  if (addUPN(text)) return true;
+  if (scan && scan.last !== text){ scan.last = text; scanMsg('That QR code is not a UPN payment slip. Try the QR code on the slip (UPN QR).', true); }
+  return false;
+}
+async function openScanner(){
+  closeSheet();
+  $('#sheet').innerHTML = `<div class="sheet-bg" data-act="close"></div>
+  <div class="sheet">
+    <div class="grab"></div><h2>Scan UPN QR</h2>
+    <div class="cam"><video id="scanVid" playsinline muted autoplay></video><div class="frame"></div><div class="camoff hidden" id="camOff"></div></div>
+    <p class="muted small" id="scanMsg">Point the camera at the QR code on the payment slip. The payment is added automatically.</p>
+    <button type="button" class="btn" data-act="scan-photo">🖼️ Use a photo instead</button>
+    <button type="button" class="btn plain" data-act="close">Cancel</button>
+  </div>`;
+  $('#sheet').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  scan = {stream:null, timer:0, last:''};
+  const me = scan;
+  loadJsQR().catch(() => {});
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera API');
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:1280}}, audio:false});
+    if (scan !== me){ stream.getTracks().forEach(t => t.stop()); return; }   // closed while asking
+    me.stream = stream;
+    const v = $('#scanVid'); v.srcObject = stream; await v.play().catch(() => {});
+    const tick = async () => {
+      if (scan !== me) return;
+      if (v.readyState >= 2 && v.videoWidth){
+        try { const text = await decodeQR(v, v.videoWidth, v.videoHeight, 720); if (scan !== me) return; if (text && onQR(text)) return; }
+        catch(e){ scanMsg(e.message, true); }
+      }
+      me.timer = setTimeout(tick, 180);
+    };
+    tick();
+  } catch(e){
+    if (scan !== me) return;
+    const off = $('#camOff');
+    off.textContent = e && e.name === 'NotAllowedError' ? 'Camera access was denied. Allow it in Settings › Safari › Camera, or use a photo.' : 'Camera not available here – use a photo of the QR code instead.';
+    off.classList.remove('hidden');
+  }
+}
+function stopScan(){
+  if (!scan) return;
+  clearTimeout(scan.timer);
+  if (scan.stream) scan.stream.getTracks().forEach(t => t.stop());
+  scan = null;
+}
+async function scanPhoto(file){
+  scanMsg('Reading the photo…');
+  try {
+    const img = await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error('Could not open that image')); i.src = URL.createObjectURL(file); });
+    const text = await decodeQR(img, img.naturalWidth, img.naturalHeight, 1000);
+    URL.revokeObjectURL(img.src);
+    if (!text){ if (scan) scanMsg('No QR code found in that photo. Try a closer, sharper shot of the code.', true); else toast('No QR code found in that photo'); return; }
+    if (!addUPN(text)){ if (scan) scanMsg('That QR code is not a UPN payment slip.', true); else toast('That QR code is not a UPN payment slip'); }
+  } catch(e){ scanMsg(e.message, true); }
 }
 
 /* ================= CSV ================= */
@@ -1035,6 +1338,9 @@ document.addEventListener('click', e => {
     case 'prev': month = shiftYM(month,-1); render(); break;
     case 'next': month = shiftYM(month, 1); render(); break;
     case 'add': openEditor(); break;
+    case 'scan': openScanner(); break;
+    case 'scan-photo': $('#filePhoto').value=''; $('#filePhoto').click(); break;
+    case 'toast': { const fn = toastFn; $('#toast').classList.remove('show','act'); toastFn = null; if (fn) fn(); } break;
     case 'close': closeSheet(); break;
     case 'newcat': newCatFromEditor(); break;
     case 'add-inc': openIncome(); break;
@@ -1104,6 +1410,7 @@ $('#fileTxt').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   try { await importText(await f.text()); } catch(err){ alert('Could not read the file: ' + err.message); }
 });
+$('#filePhoto').addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) scanPhoto(f); });
 $('#fileCsv').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0]; if (!f) return;
   try { restoreCSV(await f.text()); } catch(err){ alert('Could not read the file: ' + err.message); }
