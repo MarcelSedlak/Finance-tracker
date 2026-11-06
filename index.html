@@ -596,7 +596,7 @@ async function importText(text, {quiet=false} = {}){
   toast((quiet ? 'Refreshed: ' : 'Import done: ') + parts.join(' · '));
 }
 
-/* Fetch spending.txt from the saved link (on start-up and with the ↻ button) */
+/* Fetch finance.txt from the saved link (on start-up and with the ↻ button) */
 let fetching = false;
 async function refreshFile({quiet=false} = {}){
   if (!S.fileUrl){ if (!quiet){ $('#fileTxt').value=''; $('#fileTxt').click(); } return; }
@@ -606,7 +606,12 @@ async function refreshFile({quiet=false} = {}){
     let url = S.fileUrl.trim();
     url = url.replace(/^https:\/\/www\.dropbox\.com\//i, 'https://dl.dropboxusercontent.com/');
     url += (url.includes('?') ? '&' : '?') + '_=' + Date.now(); // never use a cached copy
-    const r = await fetch(url, {cache:'no-store'});
+    let r = await fetch(url, {cache:'no-store'});
+    // The file was renamed from spending.txt to finance.txt: follow a saved link to the old name
+    if (r.status === 404 && /spending\.txt/i.test(url)){
+      const r2 = await fetch(url.replace(/spending\.txt/ig, 'finance.txt'), {cache:'no-store'}).catch(() => null);
+      if (r2 && r2.ok){ r = r2; S.fileUrl = S.fileUrl.replace(/spending\.txt/ig, 'finance.txt'); save(); }
+    }
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const text = await r.text();
     if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('the link returned a web page, not the text file');
@@ -694,7 +699,7 @@ function renderHeader(){
   const titles = {overview:'Spending', tx:'Transactions', budget:'Budget', review:'Needs review', settings:'Settings'};
   const showMonth = view==='overview' || view==='tx' || view==='budget';
   const latestData = S.tx.concat(S.income).reduce((a,t) => t.ts.slice(0,7) > a ? t.ts.slice(0,7) : a, curYM());
-  const rb = `<button class="refresh${fetching?' spin':''}" data-act="refresh" aria-label="${S.fileUrl?'Refresh from file':'Import spending.txt'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>`;
+  const rb = `<button class="refresh${fetching?' spin':''}" data-act="refresh" aria-label="${S.fileUrl?'Refresh from file':'Import finance.txt'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>`;
   const sb = `<button class="refresh" data-act="scan" aria-label="Scan UPN QR code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 16h3"/></svg></button>`;
   $('#hdr').innerHTML = `<div class="hrow"><h1>${titles[view]}</h1><div class="hacts">${sb}${rb}</div></div>` + (showMonth ?
     `<div class="month"><button class="mbtn" data-act="prev" aria-label="Previous month">‹</button><b>${ymLabel(month)}</b><button class="mbtn" data-act="next" aria-label="Next month" ${month>=latestData?'disabled':''}>›</button></div>` : '');
@@ -721,7 +726,7 @@ function renderOverview(){
   if (todo) h += `<button class="banner" data-tab="review">⚠️<span>${todo} item${todo===1?'':'s'} need${todo===1?'s':''} your input</span>›</button>`;
   const inc = monthIncome(month).reduce((a,i)=>a+i.amt,0);
   if (inc) h += `<button class="banner ok" data-tab="budget">💰<span>${fmt(inc-total)} left of ${fmt(inc)} income</span>›</button>`;
-  h += S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh from file</button>` : `<button class="btn primary" data-act="import">⬇︎ Import spending.txt</button>`;
+  h += S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh from file</button>` : `<button class="btn primary" data-act="import">⬇︎ Import finance.txt</button>`;
 
   // Category breakdown
   h += `<section class="card"><h2>By category</h2>`;
@@ -917,12 +922,12 @@ function renderSettings(){
   const rules = Object.entries(S.rules).sort((a,b)=>a[0].localeCompare(b[0]));
   $('#main').innerHTML = `
   <section class="card"><h2>Import</h2>
-    <p class="muted small" style="margin:0 0 10px"><b>Auto-refresh:</b> paste a direct link to your <b>spending.txt</b>. It's fetched every time the app opens and when you tap ↻. Only new lines are added.</p>
-    <input class="urlin" id="fileUrl" type="url" inputmode="url" placeholder="https://…/spending.txt" value="${esc(S.fileUrl||'')}" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <p class="muted small" style="margin:0 0 12px">Safari can't read iCloud Drive by itself, so the link must download the plain file and allow other sites to fetch it (e.g. a Dropbox share link, or spending.txt hosted next to this app). Without a link, ↻ opens the file picker.</p>
+    <p class="muted small" style="margin:0 0 10px"><b>Auto-refresh:</b> paste a direct link to your <b>finance.txt</b>. It's fetched every time the app opens and when you tap ↻. Only new lines are added.</p>
+    <input class="urlin" id="fileUrl" type="url" inputmode="url" placeholder="https://…/finance.txt" value="${esc(S.fileUrl||'')}" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <p class="muted small" style="margin:0 0 12px">Safari can't read iCloud Drive by itself, so the link must download the plain file and allow other sites to fetch it (e.g. a Dropbox share link, or finance.txt hosted next to this app). Without a link, ↻ opens the file picker.</p>
     <p class="muted small" style="margin:0 0 12px"><b>Understood lines:</b> Banka Sparkasse SMS, Apple Pay, <b>mStik</b> and <b>Revolut</b> notifications. mStik payments to Revolut are skipped – the Revolut notification has the real purchase. Notifications have no date, so let the Shortcut add one (e.g. <code>05.11.2026 14:03</code>) in front of the text; without it the time of import is used.</p>
     ${S.fileUrl ? `<button class="btn primary" data-act="refresh">↻ Refresh now</button>` : ''}
-    <button class="btn${S.fileUrl?'':' primary'}" data-act="import">⬇︎ Pick spending.txt manually</button>
+    <button class="btn${S.fileUrl?'':' primary'}" data-act="import">⬇︎ Pick finance.txt manually</button>
   </section>
   <section class="card"><h2>Categories</h2>
     <p class="muted small" style="margin:0 0 6px">Add your own categories. Monthly budgets are set in the <b>Budget</b> tab.</p>
@@ -1470,7 +1475,7 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
 }
 
 render();
-refreshFile({quiet:true}); // pull the latest spending.txt on every start
+refreshFile({quiet:true}); // pull the latest finance.txt on every start
 /* A Home Screen app is often resumed instead of reloaded: refresh then too */
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
