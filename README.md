@@ -16,6 +16,8 @@ A tiny personal spending tracker for iPhone (Safari / Home Screen). Everything i
 - **DVIG** lines are cash withdrawals in their own **Cash** category; you're asked what the cash was for
 - Transfers to **Revolut** ask what they were spent on (Bills, Fun, Amazon or any other category)
 - Unrecognized lines, incoming money and likely SMS/Apple Pay duplicates go to **Needs review**; incoming money can be added as income in one tap
+- Lines containing **Prejeli ste** (SMS or notification) are added straight to **income** for that month, with the payer (`… od DELODAJALEC d.o.o.`) as description; the same amount received twice within 15 minutes goes to Needs review as a likely duplicate
+- **Mark as income** in the transaction editor moves any transaction (or a line in Needs review) to income, with Undo
 - **Budget** tab: add your paycheck(s) per month, see what's left after spending and saving, and set per-category budgets deducted from it
 - **Savings**: monthly savings goal, plus how much of your income you saved each month (amount and %)
 - **Recurring payments** (e.g. installments): amount, category (default Bills), first month, number of months (or no end) and day; deducted automatically every month without being in the file
